@@ -166,6 +166,13 @@ export default function App() {
           await saveErrorRecord(errRec);
           setErrorLogs((prev) => [errRec, ...prev]);
         }
+      } catch (err) {
+        showToast(
+          'error',
+          err instanceof Error
+            ? `Could not save the API check result: ${err.message}`
+            : 'Could not save the API check result. Please try again.'
+        );
       } finally {
         inFlightChecksRef.current.delete(accountId);
         setCheckingKeyIds(new Set(inFlightChecksRef.current));
