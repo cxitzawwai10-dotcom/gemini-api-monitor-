@@ -8,6 +8,7 @@ import {
   Moon,
   RefreshCw,
   Sun,
+  Settings,
 } from 'lucide-react';
 import { PageId } from '../types/monitor';
 import { OfflineIndicator, PWAInstallButton } from './PWAComponents';
@@ -49,6 +50,12 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Token Usage',
     shortLabel: 'Usage',
     icon: Activity,
+  },
+  {
+    id: PageId.Settings,
+    label: 'Settings',
+    shortLabel: 'Settings',
+    icon: Settings,
   },
 ];
 
@@ -208,7 +215,7 @@ export const LayoutShell: React.FC<LayoutShellProps> = ({
         aria-label="Mobile navigation"
         className="lg:hidden fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md pb-safe"
       >
-        <div className="grid grid-cols-5 h-14 items-center">
+        <div className="grid grid-cols-6 h-14 items-center">
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const active = item.id === activePage;
