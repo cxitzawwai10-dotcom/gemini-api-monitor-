@@ -3,55 +3,40 @@
 
 @layer base {
   :root {
-    --font-display: 'Outfit', system-ui, -apple-system, sans-serif;
-    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
-    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    --font-display: 'Outfit', system-ui, sans-serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --md-primary: #6750a4;
+    --md-on-primary: #ffffff;
+    --md-primary-container: #eaddff;
+    --md-on-primary-container: #21005d;
+    --md-secondary: #625b71;
+    --md-surface: #fffbfe;
+    --md-surface-container: #f3edf7;
+    --md-outline: #79747e;
   }
-
-  html {
-    font-family: var(--font-sans);
-    touch-action: manipulation;
-    -webkit-tap-highlight-color: transparent;
-    overscroll-behavior-y: contain;
+  html { font-family: var(--font-sans); touch-action: manipulation; -webkit-tap-highlight-color: transparent; overscroll-behavior-y: contain; }
+  body { font-family: var(--font-sans); overflow-x: hidden; background: var(--md-surface); }
+  h1,h2,h3,.font-display { font-family: var(--font-display); text-wrap: balance; }
+  input,select,textarea { font-size: 16px; }
+  button,[role="button"] { min-height: 44px; }
+  :focus-visible { outline: 3px solid #6750a4; outline-offset: 2px; }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-thumb { background: #cac4d0; border-radius: 999px; }
+  .dark {
+    --md-primary: #d0bcff;
+    --md-on-primary: #381e72;
+    --md-primary-container: #4f378b;
+    --md-on-primary-container: #eaddff;
+    --md-secondary: #ccc2dc;
+    --md-surface: #141218;
+    --md-surface-container: #211f26;
+    --md-outline: #938f99;
   }
-
-  body {
-    font-family: var(--font-sans);
-    overflow-x: hidden;
-  }
-
-  h1, h2, h3, .font-display {
-    font-family: var(--font-display);
-    text-wrap: balance;
-  }
-
-  .font-mono, code, pre, .tabular-nums {
-    font-variant-numeric: tabular-nums;
-  }
-
-  .font-mono, code, pre {
-    font-family: var(--font-mono);
-  }
-
-  /* Prevent mobile input auto-zoom */
-  input, select, textarea {
-    font-size: 16px;
-  }
+  .dark body { background: var(--md-surface); }
 }
-
 @media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
+  *,*::before,*::after { animation-duration:.01ms!important; animation-iteration-count:1!important; transition-duration:.01ms!important; }
 }
-
-/* Safe area padding helper for Android/iOS standalone PWA */
-.pb-safe {
-  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
-}
-
-.pt-safe {
-  padding-top: env(safe-area-inset-top);
-}
+.pb-safe { padding-bottom: max(.5rem, env(safe-area-inset-bottom)); }
+.pt-safe { padding-top: env(safe-area-inset-top); }
