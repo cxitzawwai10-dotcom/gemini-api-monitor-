@@ -77,6 +77,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
             <div className="text-xl font-bold tabular-nums text-slate-900 dark:text-slate-100">{usageCount}</div>
           </div>
         </div>
+        <p className="text-[11px] leading-relaxed text-amber-700 dark:text-amber-300">Importing a backup replaces the API key accounts, usage records and error history currently saved on this device. Export a backup first if you want to keep the current data.</p>
         <div className="flex flex-col sm:flex-row gap-2">
           <button
             type="button"
