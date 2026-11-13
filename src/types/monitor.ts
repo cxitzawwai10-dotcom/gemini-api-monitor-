@@ -4,6 +4,7 @@ export enum PageId {
   Models = 'models',
   QuotaMonitor = 'quota-monitor',
   TokenUsage = 'token-usage',
+  Settings = 'settings',
 }
 
 export enum KeyHealthStatus {
