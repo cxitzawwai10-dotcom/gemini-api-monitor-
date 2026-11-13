@@ -91,9 +91,9 @@ jobs:
               }
           '''
           if "signingConfigs {" not in s:
-              s = re.sub(r'(?m)^\s*buildTypes\s*\\{', signing + '\n            buildTypes {', s, count=1)
+              s = re.sub(r'(?m)^\s*buildTypes\s*\{', signing + '\n            buildTypes {', s, count=1)
           if "signingConfig signingConfigs.release" not in s:
-              s, n3 = re.subn(r'(?m)(^\s*release\s*\\{)', r'\1\n            signingConfig signingConfigs.release', s, count=1)
+              s, n3 = re.subn(r'(?m)(^\s*release\s*\{)', r'\1\n            signingConfig signingConfigs.release', s, count=1)
               if n3 != 1:
                   raise SystemExit("Could not safely attach release signing config")
           p.write_text(s)
