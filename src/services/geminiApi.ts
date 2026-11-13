@@ -7,6 +7,29 @@ import { classifyGeminiApiError } from '../utils/health';
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
+const REQUEST_TIMEOUT_MS = 20_000;
+const MAX_MODEL_PAGES = 100;
+
+function createTimedRequestSignal(parentSignal?: AbortSignal) {
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeoutId = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, REQUEST_TIMEOUT_MS);
+  const abortFromParent = () => controller.abort();
+  if (parentSignal?.aborted) controller.abort();
+  else parentSignal?.addEventListener('abort', abortFromParent, { once: true });
+  return {
+    signal: controller.signal,
+    didTimeout: () => timedOut,
+    cleanup: () => {
+      window.clearTimeout(timeoutId);
+      parentSignal?.removeEventListener('abort', abortFromParent);
+    },
+  };
+}
+
 interface RawGeminiModel {
   name?: string;
   baseModelId?: string;
@@ -78,8 +101,10 @@ export async function checkKeyAndDiscoverModels(
     };
   }
 
+  const timedRequest = createTimedRequestSignal(signal);
   try {
     const allModels: DiscoveredModel[] = [];
+    const seenPageTokens = new Set<string>();
     let pageToken: string | undefined;
     let pageCount = 0;
 
@@ -95,7 +120,7 @@ export async function checkKeyAndDiscoverModels(
         headers: {
           'x-goog-api-key': trimmedKey,
         },
-        signal,
+        signal: timedRequest.signal,
       });
 
       let payload: RawModelsListResponse = {};
@@ -156,7 +181,17 @@ export async function checkKeyAndDiscoverModels(
       allModels.push(...discovered);
       pageToken = payload.nextPageToken;
       pageCount += 1;
-    } while (pageToken && pageCount < 5);
+      if (pageToken) {
+        if (seenPageTokens.has(pageToken)) {
+          throw new Error('Gemini API repeated a model page token; discovery stopped to avoid an endless loop.');
+        }
+        seenPageTokens.add(pageToken);
+      }
+    } while (pageToken && pageCount < MAX_MODEL_PAGES);
+
+    if (pageToken && pageCount >= MAX_MODEL_PAGES) {
+      throw new Error(`Model discovery reached the safety limit of ${MAX_MODEL_PAGES} pages. Please refresh to continue.`);
+    }
 
     allModels.sort((a, b) => a.id.localeCompare(b.id));
 
@@ -169,7 +204,9 @@ export async function checkKeyAndDiscoverModels(
     };
   } catch (err) {
     const isAborted = err instanceof DOMException && err.name === 'AbortError';
-    const message = isAborted
+    const message = timedRequest.didTimeout()
+      ? `Health check timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds.`
+      : isAborted
       ? 'Health check request was cancelled.'
       : err instanceof Error
       ? `Network error: ${err.message}`
@@ -193,6 +230,8 @@ export async function checkKeyAndDiscoverModels(
       checkedAt,
       latencyMs: Math.round(performance.now() - startedAt),
     };
+  } finally {
+    timedRequest.cleanup();
   }
 }
 
@@ -245,6 +284,7 @@ export async function runGenerateContentTest(params: {
   const cleanModelId = params.modelId.replace(/^models\//, '');
   const endpoint = `${GEMINI_API_BASE}/models/${encodeURIComponent(cleanModelId)}:generateContent`;
 
+  const timedRequest = createTimedRequestSignal(params.signal);
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -260,7 +300,7 @@ export async function runGenerateContentTest(params: {
           },
         ],
       }),
-      signal: params.signal,
+      signal: timedRequest.signal,
     });
 
     let payload: RawGenerateContentResponse = {};
@@ -333,8 +373,9 @@ export async function runGenerateContentTest(params: {
     const latencyMs = Math.round(performance.now() - startedAt);
     const classified = classifyGeminiApiError({
       isNetworkFailure: true,
-      apiMessage:
-        err instanceof Error
+      apiMessage: timedRequest.didTimeout()
+        ? `Generation request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds.`
+        : err instanceof Error
           ? `Network error: ${err.message}`
           : 'Network error during generateContent request.',
     });
@@ -357,5 +398,7 @@ export async function runGenerateContentTest(params: {
       latencyMs,
       timestamp,
     };
+  } finally {
+    timedRequest.cleanup();
   }
 }
