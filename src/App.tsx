@@ -40,6 +40,7 @@ import { ApiKeysPage } from './components/ApiKeysPage';
 import { ModelsPage } from './components/ModelsPage';
 import { QuotaMonitorPage } from './components/QuotaMonitorPage';
 import { TokenUsagePage } from './components/TokenUsagePage';
+import { SettingsPage } from './components/SettingsPage';
 import { AccountDetailModal } from './components/AccountDetailModal';
 
 interface ToastState {
@@ -569,6 +570,17 @@ export default function App() {
                   onUpdatePricing={handleUpdatePricing}
                   onClearUsageHistory={handleClearUsageHistory}
                   onExportCsv={handleExportCsv}
+                  onExportBackup={handleExportBackup}
+                  onImportBackup={handleImportBackup}
+                />
+              )}
+
+              {activePage === PageId.Settings && (
+                <SettingsPage
+                  theme={theme}
+                  onToggleTheme={toggleTheme}
+                  accountCount={accounts.length}
+                  usageCount={usageLogs.length}
                   onExportBackup={handleExportBackup}
                   onImportBackup={handleImportBackup}
                 />
