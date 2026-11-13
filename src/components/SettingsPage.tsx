@@ -36,7 +36,7 @@ export const SettingsPage: React.FC<SettingsPageProps> = ({
     try {
       const rawJson = await file.text();
       await onImportBackup(rawJson);
-      setMessage('Backup import completed. Check the dashboard for updated data.');
+      setMessage('Import request processed. Check the app notification for the result.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not import this backup file.');
     } finally {
