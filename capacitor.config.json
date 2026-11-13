@@ -1,0 +1,8 @@
+{
+  "appId": "com.geminipulse.monitor",
+  "appName": "Gemini API Monitor",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  }
+}
