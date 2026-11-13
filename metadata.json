@@ -1,0 +1,6 @@
+{
+  "name": "GeminiPulse",
+  "description": "Personal mobile-first Gemini API monitor for multi-key health checks, automatic model discovery, quota transparency, token usage tracking, and cost estimation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
