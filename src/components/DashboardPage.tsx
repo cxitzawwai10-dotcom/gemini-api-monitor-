@@ -46,6 +46,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const summary = computeDashboardSummary(accounts, usageLogs, pricingCatalog);
   const isCheckingAny = checkingKeyIds.size > 0;
   const enabledAccounts = accounts.filter((account) => account.enabled);
+  const latestCheck = accounts
+    .map((account) => account.lastCheckedAt)
+    .filter((value): value is string => Boolean(value))
+    .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
 
   const panelModelCount = (matcher: (id: string, label: string) => boolean) =>
     enabledAccounts.filter((account) =>
@@ -59,7 +63,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           <div className="min-w-0">
             <p className="text-xs font-semibold uppercase tracking-[.16em] text-cyan-300">GeminiPulse</p>
             <h2 className="mt-1 text-xl font-bold text-white">API Key Health</h2>
-            <p className="mt-1 text-xs text-slate-400">Key status, errors and priority model discovery</p>
+            <p className="mt-1 text-xs text-slate-400">Automatic health check every 2 minutes while app is open</p>
           </div>
           <button type="button" onClick={onCheckAll} disabled={isCheckingAny || enabledAccounts.length === 0}
             className="min-h-11 shrink-0 rounded-xl bg-cyan-500/15 px-3 text-sm font-semibold text-cyan-200 border border-cyan-300/25 disabled:opacity-40 inline-flex items-center gap-2">
@@ -82,7 +86,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
           </div>
         </div>
         <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-3">
-          <span className="text-xs text-slate-400">{summary.totalKeys} saved keys · {summary.enabledKeys} enabled</span>
+          <span className="min-w-0 text-xs text-slate-400">{summary.totalKeys} keys · Updated {formatRelativeTime(latestCheck)}</span>
           <button type="button" onClick={() => onNavigate(PageId.ApiKeys)} className="min-h-9 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white inline-flex items-center gap-1.5">
             <Plus className="h-3.5 w-3.5" /> Add Key
           </button>
