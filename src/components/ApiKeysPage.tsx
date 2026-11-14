@@ -182,7 +182,7 @@ export const ApiKeysPage: React.FC<ApiKeysPageProps> = ({
 
         <div className="flex flex-wrap items-center gap-2.5">
           <a
-            href="https://aistudio.google.com/app/apikey"
+            href="https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Faistudio.google.com%2Fapp%2Fapikey&service=lso"
             target="_blank"
             rel="noopener noreferrer"
             aria-label="Get a Gemini API key from Google AI Studio"
