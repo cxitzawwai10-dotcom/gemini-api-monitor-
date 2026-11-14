@@ -84,8 +84,8 @@ jobs:
           version = os.environ["APP_VERSION"].removeprefix("v")
           code = os.environ["APP_VERSION_CODE"]
 
-          s, n1 = re.subn(r'versionCode\\s+\\d+', f'versionCode {code}', s, count=1)
-          s, n2 = re.subn(r'versionName\\s+["\\'][^"\\']+["\\']', f'versionName "{version}"', s, count=1)
+          s, n1 = re.subn(r'versionCode\s+\d+', f'versionCode {code}', s, count=1)
+          s, n2 = re.subn(r'versionName\s+["\'][^"\']+["\']', f'versionName "{version}"', s, count=1)
           if n1 != 1 or n2 != 1:
               raise SystemExit("Could not safely update Android versionCode/versionName")
 
@@ -100,14 +100,14 @@ jobs:
               }
           '''
           if "signingConfigs {" not in s:
-              s, ns = re.subn(r'(?m)^(\\s*)buildTypes\\s*\\{', signing + r'\\n\\1buildTypes {', s, count=1)
+              s, ns = re.subn(r'(?m)^(\s*)buildTypes\s*\{', signing + r'\n\1buildTypes {', s, count=1)
               if ns != 1:
                   raise SystemExit("Could not insert release signing configuration")
 
           # Attach signing only to buildTypes.release, not signingConfigs.release.
-          pattern = r'(?s)(buildTypes\\s*\\{.*?\\brelease\\s*\\{)'
+          pattern = r'(?s)(buildTypes\s*\{.*?\brelease\s*\{)'
           if "signingConfig signingConfigs.release" not in s:
-              s, n3 = re.subn(pattern, r'\\1\\n            signingConfig signingConfigs.release', s, count=1)
+              s, n3 = re.subn(pattern, r'\1\n            signingConfig signingConfigs.release', s, count=1)
               if n3 != 1:
                   raise SystemExit("Could not safely attach signing config to buildTypes.release")
 
@@ -131,7 +131,9 @@ jobs:
           set -euo pipefail
           APK="android/app/build/outputs/apk/release/app-release.apk"
           test -s "$APK"
-          apksigner verify --verbose "$APK"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$APKSIGNER"
+          "$APKSIGNER" verify --verbose "$APK"
           echo "Signed APK verified: $APK"
 
       - name: Upload APK artifact
