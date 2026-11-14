@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircle,
   Check,
@@ -29,6 +29,32 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
   const [onlyGenerateContent, setOnlyGenerateContent] = useState(false);
   const [showMatrix, setShowMatrix] = useState(true);
   const [showExplorer, setShowExplorer] = useState(true);
+
+  // Automatically bring refreshed model results into view when discovery data changes.
+  const resultsSectionRef = useRef<HTMLElement | null>(null);
+  const previousResultsVersionRef = useRef<string | null>(null);
+  const resultsVersion = accounts
+    .map((account) =>
+      [account.id, account.modelsUpdatedAt || '', account.discoveredModels.length].join(':')
+    )
+    .join('|');
+
+  useEffect(() => {
+    const previousVersion = previousResultsVersionRef.current;
+    previousResultsVersionRef.current = resultsVersion;
+
+    // Skip the initial render; scroll only after a later successful model refresh.
+    if (
+      previousVersion !== null &&
+      previousVersion !== resultsVersion &&
+      accounts.some((account) => account.discoveredModels.length > 0)
+    ) {
+      resultsSectionRef.current?.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }
+  }, [accounts, resultsVersion]);
 
   const allDiscoveredModelIds = useMemo(() => {
     const map = new Map<string, DiscoveredModel>();
@@ -219,7 +245,7 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
       </section>
 
       {/* Per-Key Discovered Models Explorer */}
-      <section className="space-y-4">
+      <section ref={resultsSectionRef} className="space-y-4 scroll-mt-20">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
             Per-Key Model Discovery Details
