@@ -25,6 +25,9 @@ function openDb(): Promise<IDBDatabase> {
       return;
     }
     const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onblocked = () => {
+      reject(new Error('Local database is busy in another app tab. Close other GeminiPulse tabs, then retry.'));
+    };
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_ACCOUNTS)) {
@@ -40,7 +43,11 @@ function openDb(): Promise<IDBDatabase> {
         db.createObjectStore(STORE_SETTINGS, { keyPath: 'key' });
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
     request.onerror = () =>
       reject(request.error || new Error('Failed to open IndexedDB.'));
   });
