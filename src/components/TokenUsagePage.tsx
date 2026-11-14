@@ -29,7 +29,7 @@ import {
   DEFAULT_PRICING_CATALOG,
   formatUsd,
 } from '../utils/pricing';
-import { CostBreakdownBars, CostChart, TokenUsageChart } from './Charts';
+import { CostBreakdownBars, CostChart, TokenDistributionDonut, TokenUsageChart } from './Charts';
 import { ConfirmDialog } from './ConfirmDialog';
 
 interface TokenUsagePageProps {
@@ -564,7 +564,14 @@ export const TokenUsagePage: React.FC<TokenUsagePageProps> = ({
           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-3">
             App-Recorded Token Consumption
           </h3>
-          <TokenUsageChart data={dailySeries} />
+          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-4 items-center">
+            <TokenUsageChart data={dailySeries} />
+            <TokenDistributionDonut
+              inputTokens={totals.inputTokens}
+              outputTokens={totals.outputTokens}
+              thinkingTokens={totals.thinkingTokens}
+            />
+          </div>
         </section>
 
         <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5">
