@@ -1,6 +1,7 @@
 name: Signed Android Release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*.*.*'
@@ -38,6 +39,7 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
           for name in ANDROID_KEYSTORE_BASE64 ANDROID_STORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
             if [ -z "${!name}" ]; then
               echo "::error::Missing GitHub Actions secret: $name"
@@ -64,22 +66,29 @@ jobs:
           ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-          APP_VERSION: ${{ github.ref_name }}
+          APP_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}
           APP_VERSION_CODE: ${{ github.run_number }}
         run: |
           set -euo pipefail
-          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/release-keystore.jks
+          KEYSTORE_PATH="$GITHUB_WORKSPACE/android/app/release-keystore.jks"
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+          keytool -list -keystore "$KEYSTORE_PATH" -storepass "$ANDROID_STORE_PASSWORD" -alias "$ANDROID_KEY_ALIAS" >/dev/null
+
           python3 - <<'PY'
           import os, re
           from pathlib import Path
+
           p = Path("android/app/build.gradle")
           s = p.read_text()
           version = os.environ["APP_VERSION"].removeprefix("v")
           code = os.environ["APP_VERSION_CODE"]
-          s, n1 = re.subn(r'versionCode\s+\d+', f'versionCode {code}', s, count=1)
-          s, n2 = re.subn(r'versionName\s+["\'][^"\']+["\']', f'versionName "{version}"', s, count=1)
+
+          s, n1 = re.subn(r'versionCode\\s+\\d+', f'versionCode {code}', s, count=1)
+          s, n2 = re.subn(r'versionName\\s+["\\'][^"\\']+["\\']', f'versionName "{version}"', s, count=1)
           if n1 != 1 or n2 != 1:
               raise SystemExit("Could not safely update Android versionCode/versionName")
+
           signing = '''
               signingConfigs {
                   release {
@@ -91,14 +100,20 @@ jobs:
               }
           '''
           if "signingConfigs {" not in s:
-              s = re.sub(r'(?m)^\s*buildTypes\s*\{', signing + '\n            buildTypes {', s, count=1)
+              s, ns = re.subn(r'(?m)^(\\s*)buildTypes\\s*\\{', signing + r'\\n\\1buildTypes {', s, count=1)
+              if ns != 1:
+                  raise SystemExit("Could not insert release signing configuration")
+
+          # Attach signing only to buildTypes.release, not signingConfigs.release.
+          pattern = r'(?s)(buildTypes\\s*\\{.*?\\brelease\\s*\\{)'
           if "signingConfig signingConfigs.release" not in s:
-              s, n3 = re.subn(r'(?m)(^\s*release\s*\{)', r'\1\n            signingConfig signingConfigs.release', s, count=1)
+              s, n3 = re.subn(pattern, r'\\1\\n            signingConfig signingConfigs.release', s, count=1)
               if n3 != 1:
-                  raise SystemExit("Could not safely attach release signing config")
+                  raise SystemExit("Could not safely attach signing config to buildTypes.release")
+
           p.write_text(s)
+          print(f"Prepared signed release {os.environ['APP_VERSION']} (versionCode {code})")
           PY
-          echo "Prepared signed release $APP_VERSION (versionCode $APP_VERSION_CODE)"
 
       - name: Build signed APK
         working-directory: android
@@ -109,7 +124,15 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease
+          ./gradlew --no-daemon assembleRelease
+
+      - name: Verify APK and signing certificate
+        run: |
+          set -euo pipefail
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+          test -s "$APK"
+          apksigner verify --verbose "$APK"
+          echo "Signed APK verified: $APK"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -122,7 +145,7 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: Gemini API Monitor ${{ github.ref_name }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}
+          name: Gemini API Monitor ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('v1.0.{0}', github.run_number) }}
           generate_release_notes: true
           files: android/app/build/outputs/apk/release/app-release.apk
