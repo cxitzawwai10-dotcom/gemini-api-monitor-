@@ -336,9 +336,26 @@ export default function App() {
       return { ok: false, error: 'Selected API key account not found.' };
     }
 
+    // Require an explicit GenerateContent capability from the Models API before sending.
+    const cleanModelId = params.modelId.replace(/^models\\//, '');
+    const selectedModel = acc.discoveredModels.find((model) => model.id === cleanModelId);
+    if (!selectedModel) {
+      const message = 'This model was not discovered for the selected API key. Refresh models and choose a listed model.';
+      showToast('error', message);
+      return { ok: false, error: message };
+    }
+    if (!selectedModel.supportedGenerationMethods.includes('generateContent')) {
+      const methods = selectedModel.supportedGenerationMethods;
+      const message = methods.length
+        ? 'This model does not support GenerateContent. Supported methods: ' + methods.join(', ') + '.'
+        : 'This model has no supported generation methods listed by the Models API, so GenerateContent is blocked.';
+      showToast('error', message);
+      return { ok: false, error: message };
+    }
+
     const res = await runGenerateContentTest({
       apiKey: acc.apiKey,
-      modelId: params.modelId,
+      modelId: selectedModel.id,
       prompt: params.prompt,
     });
 
