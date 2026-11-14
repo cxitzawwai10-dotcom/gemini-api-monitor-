@@ -40,7 +40,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
   const totalInput = usageLogs.reduce((n, r) => n + r.inputTokens, 0);
   const totalOutput = usageLogs.reduce((n, r) => n + r.outputTokens, 0);
   const totalTokens = usageLogs.reduce((n, r) => n + r.totalTokens, 0);
-  const models = accounts.flatMap((a) => a.discoveredModels);
   const discovered = new Set(models.map((m) => m.id)).size;
   const generation = new Set(models.filter((m) => m.supportedGenerationMethods.includes('generateContent')).map((m) => m.id)).size;
   const requestsMinute = usageLogs.filter((r) => now - new Date(r.timestamp).getTime() <= 60_000).length;
