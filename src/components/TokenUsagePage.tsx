@@ -253,7 +253,7 @@ export const TokenUsagePage: React.FC<TokenUsagePageProps> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="token-usage-page space-y-6">
       {/* Explicit Test Generation Runner */}
       <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-4">
         <div>
