@@ -336,7 +336,7 @@ export default function App() {
       return { ok: false, error: 'Selected API key account not found.' };
     }
 
-    // Require an explicit GenerateContent capability from the Models API before sending.
+    // Normalize the Models API resource prefix, then require explicit GenerateContent support.
     const cleanModelId = params.modelId.replace('models/', '');
     const selectedModel = acc.discoveredModels.find((model) => model.id === cleanModelId);
     if (!selectedModel) {
