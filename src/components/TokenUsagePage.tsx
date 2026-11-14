@@ -70,7 +70,7 @@ export const TokenUsagePage: React.FC<TokenUsagePageProps> = ({
   const availableGenModels = useMemo(() => {
     if (!activeTestAccount) return [];
     return activeTestAccount.discoveredModels.filter((m) =>
-      m.supportedGenerationMethods.includes('generateContent')
+      m.supportedGenerationMethods.some((method) => ['generateContent', 'interactions'].includes(method))
     );
   }, [activeTestAccount]);
 
