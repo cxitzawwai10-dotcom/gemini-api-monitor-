@@ -298,7 +298,7 @@ async function runInteractionsTest(params: {
 }): Promise<GenerateTestResult> {
   const startedAt = performance.now();
   const timestamp = new Date().toISOString();
-  const cleanModelId = params.modelId.replace(/^models\\//, '');
+  const cleanModelId = params.modelId.replace(/^models\//, '');
   const endpoint = `${GEMINI_API_BASE}/interactions`;
   const timedRequest = createTimedRequestSignal(undefined, GENERATION_TIMEOUT_MS);
 
@@ -348,7 +348,7 @@ async function runInteractionsTest(params: {
       .flatMap((step) => step.content || [])
       .filter((part) => part.type === 'text' && part.text)
       .map((part) => part.text || '')
-      .join('\\n')
+      .join('\n')
       .trim();
 
     return {
