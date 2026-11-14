@@ -1,38 +1,5 @@
-import React, { useState } from 'react';
-import {
-  Activity,
-  AlertTriangle,
-  CheckCircle2,
-  ChevronDown,
-  ChevronRight,
-  ChevronUp,
-  CircleDashed,
-  Coins,
-  Cpu,
-  KeyRound,
-  Plus,
-  RefreshCw,
-  ShieldAlert,
-  Trash2,
-} from 'lucide-react';
-import {
-  ApiErrorRecord,
-  ApiKeyAccount,
-  KeyHealthStatus,
-  ModelPricing,
-  PageId,
-  UsageRecord,
-} from '../types/monitor';
-import {
-  computeDashboardSummary,
-  formatRelativeTime,
-  isErrorHealthStatus,
-  maskApiKey,
-} from '../utils/health';
-import { aggregateDailyUsage } from '../utils/filtering';
-import { formatUsd } from '../utils/pricing';
-import { CostChart, TokenUsageChart } from './Charts';
-import { StatusBadge } from './StatusBadge';
+import React, { useMemo, useState } from 'react';
+import { ApiErrorRecord, ApiKeyAccount, KeyHealthStatus, ModelPricing, UsageRecord } from '../types/monitor';
 
 interface DashboardPageProps {
   accounts: ApiKeyAccount[];
@@ -40,514 +7,92 @@ interface DashboardPageProps {
   errorLogs: ApiErrorRecord[];
   pricingCatalog: ModelPricing[];
   checkingKeyIds: Set<string>;
-  onNavigate: (page: PageId) => void;
+  onNavigate: (page: import('../types/monitor').PageId) => void;
   onSelectAccount: (account: ApiKeyAccount) => void;
   onCheckAll: () => void;
   onClearErrors: () => void;
 }
 
+type Tab = 'Overview' | 'Quota' | 'Tokens' | 'Errors' | 'Models' | 'History';
+const panel = 'rounded-lg border border-slate-700/70 bg-[#17243A] p-3';
+const muted = 'text-[11px] text-slate-400';
+const value = 'text-sm font-semibold text-slate-100 tabular-nums';
+
+function statusLabel(account?: ApiKeyAccount) {
+  if (!account) return 'NOT TESTED';
+  if (account.status === KeyHealthStatus.Ready) return 'ACTIVE';
+  if (account.status === KeyHealthStatus.InvalidKey) return 'INVALID';
+  if (account.status === KeyHealthStatus.QuotaExceeded) return 'QUOTA EXCEEDED';
+  if (account.status === KeyHealthStatus.NotChecked) return 'NOT TESTED';
+  return 'ERROR';
+}
+
 export const DashboardPage: React.FC<DashboardPageProps> = ({
-  accounts,
-  usageLogs,
-  errorLogs,
-  pricingCatalog,
-  checkingKeyIds,
-  onNavigate,
-  onSelectAccount,
-  onCheckAll,
-  onClearErrors,
+  accounts, usageLogs, errorLogs, checkingKeyIds, onSelectAccount, onCheckAll, onClearErrors,
 }) => {
-  const [showActivity, setShowActivity] = useState(true);
-  const [showErrors, setShowErrors] = useState(true);
+  const [tab, setTab] = useState<Tab>('Overview');
+  const [historyWindow, setHistoryWindow] = useState<'1H' | '24H' | '7D'>('24H');
+  const [historyResult, setHistoryResult] = useState<'All' | 'Success' | 'Errors'>('All');
+  const selected = accounts[0];
+  const now = Date.now();
+  const successful = usageLogs.filter((r) => r.status === 'SUCCESS');
+  const failed = usageLogs.filter((r) => r.status === 'ERROR');
+  const totalInput = usageLogs.reduce((n, r) => n + r.inputTokens, 0);
+  const totalOutput = usageLogs.reduce((n, r) => n + r.outputTokens, 0);
+  const totalTokens = usageLogs.reduce((n, r) => n + r.totalTokens, 0);
+  const models = accounts.flatMap((a) => a.discoveredModels);
+  const discovered = new Set(models.map((m) => m.id)).size;
+  const generation = new Set(models.filter((m) => m.supportedGenerationMethods.includes('generateContent')).map((m) => m.id)).size;
+  const requestsMinute = usageLogs.filter((r) => now - new Date(r.timestamp).getTime() <= 60_000).length;
+  const requestsDay = usageLogs.filter((r) => now - new Date(r.timestamp).getTime() <= 86_400_000).length;
+  const average = successful.length ? Math.round(successful.reduce((n, r) => n + r.totalTokens, 0) / successful.length) : 0;
+  const lastTest = selected?.lastCheckedAt ? new Date(selected.lastCheckedAt) : null;
+  const history = useMemo(() => {
+    const windowMs = historyWindow === '1H' ? 3_600_000 : historyWindow === '24H' ? 86_400_000 : 604_800_000;
+    const usage = usageLogs.map((r) => ({ time: r.timestamp, title: r.modelId, detail: r.status === 'SUCCESS' ? 'SUCCESS' : (r.errorMessage || 'ERROR'), result: r.status === 'SUCCESS' ? 'Success' : 'Errors' }));
+    const errors = errorLogs.map((r) => ({ time: r.timestamp, title: r.modelId || r.category, detail: r.message, result: 'Errors' as const }));
+    return [...usage, ...errors].filter((r) => now - new Date(r.time).getTime() <= windowMs).filter((r) => historyResult === 'All' || r.result === historyResult).sort((a,b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0,50);
+  }, [usageLogs, errorLogs, historyWindow, historyResult, now]);
 
-  const summary = computeDashboardSummary(accounts, usageLogs, pricingCatalog);
-  const dailySeries = aggregateDailyUsage(usageLogs, pricingCatalog);
-  const isCheckingAny = checkingKeyIds.size > 0;
-
-  // Aggregate unique discovered models and how many keys can access each
-  const modelAvailabilityMap = new Map<
-    string,
-    { id: string; displayName: string; keyCount: number; methods: string[] }
-  >();
-  for (const acc of accounts) {
-    if (acc.status !== KeyHealthStatus.Ready && acc.discoveredModels.length === 0)
-      continue;
-    for (const m of acc.discoveredModels) {
-      const existing = modelAvailabilityMap.get(m.id);
-      if (existing) {
-        existing.keyCount += 1;
-      } else {
-        modelAvailabilityMap.set(m.id, {
-          id: m.id,
-          displayName: m.displayName,
-          keyCount: 1,
-          methods: m.supportedGenerationMethods,
-        });
-      }
-    }
-  }
-  const topModels = Array.from(modelAvailabilityMap.values())
-    .sort((a, b) => b.keyCount - a.keyCount || a.id.localeCompare(b.id))
-    .slice(0, 8);
-
+  const tabs: Tab[] = ['Overview', 'Quota', 'Tokens', 'Errors', 'Models', 'History'];
   return (
-    <div className="space-y-6">
-      {/* Startup Health Check Summary Banner */}
-      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              API Key Health Overview
-            </h2>
-            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-              Startup check uses the lightweight Models List endpoint — zero generation tokens consumed.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
-            <button
-              type="button"
-              onClick={onCheckAll}
-              disabled={isCheckingAny || summary.enabledKeys === 0}
-              className="min-h-[44px] px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium inline-flex items-center gap-2 transition-colors whitespace-nowrap shrink-0"
-            >
-              <RefreshCw
-                className={`w-4 h-4 ${isCheckingAny ? 'animate-spin' : ''}`}
-                aria-hidden="true"
-              />
-              <span>{isCheckingAny ? 'Checking Keys...' : 'Check All Keys'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onNavigate(PageId.ApiKeys)}
-              className="min-h-[44px] px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 text-sm font-medium inline-flex items-center gap-2 transition-colors whitespace-nowrap shrink-0"
-            >
-              <Plus className="w-4 h-4" aria-hidden="true" />
-              <span>Add Key</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Explicit Ready / Errors / Not Checked counts */}
-        <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-800 grid grid-cols-3 gap-2 sm:gap-3">
-          <div className="flex items-center gap-2">
-            <CheckCircle2
-              className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600 dark:text-emerald-400 shrink-0"
-              aria-hidden="true"
-            />
-            <div className="min-w-0">
-              <div className="text-lg sm:text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
-                {summary.readyKeys}
-              </div>
-              <div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                READY
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <AlertTriangle
-              className="w-4 h-4 sm:w-5 sm:h-5 text-rose-600 dark:text-rose-400 shrink-0"
-              aria-hidden="true"
-            />
-            <div className="min-w-0">
-              <div className="text-lg sm:text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
-                {summary.errorKeys}
-              </div>
-              <div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                Errors
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <CircleDashed
-              className="w-4 h-4 sm:w-5 sm:h-5 text-slate-500 dark:text-slate-400 shrink-0"
-              aria-hidden="true"
-            />
-            <div className="min-w-0">
-              <div className="text-lg sm:text-xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
-                {summary.notCheckedKeys}
-              </div>
-              <div className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                Not Checked
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Primary KPI Grid */}
-      <section aria-label="Key performance metrics">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-              <span>API Keys</span>
-              <KeyRound className="w-4 h-4" aria-hidden="true" />
-            </div>
-            <div className="mt-2 text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
-              {summary.totalKeys}
-            </div>
-            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-              {summary.readyKeys} connected · {summary.errorKeys} failed
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-              <span>Available Models</span>
-              <Cpu className="w-4 h-4" aria-hidden="true" />
-            </div>
-            <div className="mt-2 text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
-              {summary.uniqueAvailableModels}
-            </div>
-            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-              Confirmed by Models API
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-              <span>Total Tokens</span>
-              <Activity className="w-4 h-4" aria-hidden="true" />
-            </div>
-            <div className="mt-2 text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
-              {summary.totalTokens.toLocaleString()}
-            </div>
-            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-              {summary.totalInputTokens.toLocaleString()} in ·{' '}
-              {summary.totalOutputTokens.toLocaleString()} out
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-              <span>Est. Cost (App)</span>
-              <Coins className="w-4 h-4" aria-hidden="true" />
-            </div>
-            <div className="mt-2 text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
-              {formatUsd(summary.estimatedTotalCostUsd)}
-            </div>
-            <div className="mt-1 text-xs text-slate-500 dark:text-slate-400 tabular-nums">
-              {summary.totalRequests} requests recorded
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Account Status Cards (Clickable -> AccountDetailModal) */}
-      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Accounts & API Keys
-            </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Tap any account card to inspect discovered models, masked key, and error logs.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => onNavigate(PageId.ApiKeys)}
-            className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline whitespace-nowrap shrink-0 min-h-[44px] px-2 flex items-center"
-          >
-            Manage Keys
-          </button>
-        </div>
-
-        {accounts.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-8 text-center space-y-3">
-            <KeyRound
-              className="w-8 h-8 mx-auto text-slate-400"
-              aria-hidden="true"
-            />
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                No Gemini API keys saved yet
-              </p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
-                Add one or more personal Gemini API keys from different Google accounts or Cloud projects. Keys stay stored locally in your browser IndexedDB.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => onNavigate(PageId.ApiKeys)}
-              className="min-h-[44px] px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium inline-flex items-center gap-2"
-            >
-              <Plus className="w-4 h-4" />
-              Add First API Key
-            </button>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {accounts.map((acc) => {
-              const isChecking = checkingKeyIds.has(acc.id);
-              const hasErr = isErrorHealthStatus(acc.status);
-              return (
-                <button
-                  key={acc.id}
-                  type="button"
-                  onClick={() => onSelectAccount(acc)}
-                  className="text-left rounded-xl border border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 p-4 transition-colors space-y-2.5 w-full"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="font-semibold text-sm text-slate-900 dark:text-slate-100 truncate">
-                        {acc.accountName}
-                      </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-                        {acc.projectLabel || acc.googleAccountLabel || maskApiKey(acc.apiKey)}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <StatusBadge
-                        status={acc.status}
-                        enabled={acc.enabled}
-                        isChecking={isChecking}
-                      />
-                      <ChevronRight
-                        className="w-4 h-4 text-slate-400"
-                        aria-hidden="true"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
-                    <span>{acc.discoveredModels.length} models</span>
-                    <span aria-hidden="true">·</span>
-                    <span>Checked {formatRelativeTime(acc.lastCheckedAt)}</span>
-                  </div>
-
-                  {hasErr && acc.latestError && (
-                    <p className="text-xs text-rose-600 dark:text-rose-400 line-clamp-2">
-                      {acc.latestError.httpStatus
-                        ? `HTTP ${acc.latestError.httpStatus}: `
-                        : ''}
-                      {acc.latestError.message}
-                    </p>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-      </section>
-
-      {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Token Usage Trend
-            </h2>
-            <button
-              type="button"
-              onClick={() => onNavigate(PageId.TokenUsage)}
-              className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline min-h-[44px] px-2 flex items-center"
-            >
-              Details
-            </button>
-          </div>
-          <TokenUsageChart data={dailySeries} />
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Estimated Cost Trend
-            </h2>
-            <button
-              type="button"
-              onClick={() => onNavigate(PageId.TokenUsage)}
-              className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline min-h-[44px] px-2 flex items-center"
-            >
-              Pricing & Cost
-            </button>
-          </div>
-          <CostChart data={dailySeries} />
-        </section>
+    <div className="min-h-full space-y-3 text-slate-100">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-bold tracking-wider">LIVE DASHBOARD</h2>
+        <span className="rounded-full bg-emerald-500/15 px-2 py-1 text-[10px] font-bold text-emerald-400">LIVE</span>
       </div>
-
-      {/* Model Availability Overview */}
-      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-            Model Availability Overview
-          </h2>
-          <button
-            type="button"
-            onClick={() => onNavigate(PageId.Models)}
-            className="text-xs font-medium text-blue-600 dark:text-blue-400 hover:underline min-h-[44px] px-2 flex items-center"
-          >
-            Compatibility Matrix
-          </button>
+      <section className={panel}>
+        <div className="flex items-center justify-between gap-2">
+          <div><div className={muted}>SELECTED API KEY</div><div className="text-sm font-semibold">{selected?.accountName || 'No API Key Selected'}</div></div>
+          <span className="rounded-full bg-slate-700 px-2 py-1 text-[10px] font-bold">{statusLabel(selected)}</span>
         </div>
-
-        {topModels.length === 0 ? (
-          <p className="text-sm text-slate-500 dark:text-slate-400 py-4">
-            No models discovered yet. Add a valid Gemini API key to automatically retrieve accessible models.
-          </p>
-        ) : (
-          <div className="divide-y divide-slate-100 dark:divide-slate-800">
-            {topModels.map((m) => (
-              <div
-                key={m.id}
-                className="py-2.5 flex items-center justify-between gap-3 text-sm"
-              >
-                <div className="min-w-0">
-                  <div className="font-medium text-slate-900 dark:text-slate-100 truncate">
-                    {m.displayName}
-                  </div>
-                  <div className="text-xs font-mono text-slate-500 dark:text-slate-400 truncate">
-                    {m.id}
-                  </div>
-                </div>
-                <div className="text-xs font-mono tabular-nums text-slate-600 dark:text-slate-300 shrink-0">
-                  {m.keyCount} / {accounts.length} keys
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <div className={muted}>Last Test: {lastTest ? lastTest.toLocaleString() : '—'}</div>
+        {selected && <button onClick={() => onSelectAccount(selected)} className="mt-2 text-xs text-sky-300 underline">View selected key details</button>}
       </section>
-
-      {/* Recent API Activity & Error History */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Recent API Activity ({usageLogs.length})
-            </h2>
-            <button
-              type="button"
-              onClick={() => setShowActivity((v) => !v)}
-              aria-expanded={showActivity}
-              className="min-h-[44px] px-2.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1"
-            >
-              {showActivity ? (
-                <>
-                  Hide <ChevronUp className="w-4 h-4" />
-                </>
-              ) : (
-                <>
-                  Show <ChevronDown className="w-4 h-4" />
-                </>
-              )}
-            </button>
-          </div>
-
-          {showActivity && (
-            <div className="mt-3">
-              {usageLogs.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400 py-4">
-                  No GenerateContent requests recorded yet.
-                </p>
-              ) : (
-                <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {usageLogs.slice(0, 6).map((log) => (
-                    <div
-                      key={log.id}
-                      className="py-2.5 flex items-center justify-between gap-3 text-xs"
-                    >
-                      <div className="min-w-0">
-                        <div className="font-medium text-slate-900 dark:text-slate-100 truncate">
-                          {log.accountName} · <span className="font-mono">{log.modelId}</span>
-                        </div>
-                        <div className="text-slate-500 dark:text-slate-400 font-mono tabular-nums">
-                          {formatRelativeTime(log.timestamp)} · {log.latencyMs}ms
-                        </div>
-                      </div>
-                      <div className="text-right font-mono tabular-nums shrink-0">
-                        <div
-                          className={
-                            log.status === 'SUCCESS'
-                              ? 'text-emerald-700 dark:text-emerald-400 font-semibold'
-                              : 'text-rose-600 dark:text-rose-400 font-semibold'
-                          }
-                        >
-                          {log.status}
-                        </div>
-                        <div className="text-slate-500 dark:text-slate-400">
-                          {log.totalTokens.toLocaleString()} tok
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-
-        <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Error History ({errorLogs.length})
-            </h2>
-            <div className="flex items-center gap-1">
-              {errorLogs.length > 0 && (
-                <button
-                  type="button"
-                  onClick={onClearErrors}
-                  className="min-h-[44px] px-2.5 rounded-lg text-xs font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 inline-flex items-center gap-1"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                  Clear
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => setShowErrors((v) => !v)}
-                aria-expanded={showErrors}
-                className="min-h-[44px] px-2.5 rounded-lg text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 inline-flex items-center gap-1"
-              >
-                {showErrors ? (
-                  <>
-                    Hide <ChevronUp className="w-4 h-4" />
-                  </>
-                ) : (
-                  <>
-                    Show <ChevronDown className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {showErrors && (
-            <div className="mt-3">
-              {errorLogs.length === 0 ? (
-                <p className="text-sm text-slate-500 dark:text-slate-400 py-4">
-                  No API errors logged.
-                </p>
-              ) : (
-                <div className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {errorLogs.slice(0, 6).map((err) => (
-                    <div key={err.id} className="py-2.5 space-y-1 text-xs">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="inline-flex items-center gap-1.5 font-semibold text-rose-700 dark:text-rose-400">
-                          <ShieldAlert className="w-3.5 h-3.5 shrink-0" />
-                          {err.category}
-                          {err.httpStatus ? ` (${err.httpStatus})` : ''}
-                        </span>
-                        <span className="font-mono text-slate-500 dark:text-slate-400">
-                          {formatRelativeTime(err.timestamp)}
-                        </span>
-                      </div>
-                      <div className="text-slate-600 dark:text-slate-300 font-medium">
-                        {err.accountName}
-                        {err.modelId ? ` · ${err.modelId}` : ''}
-                      </div>
-                      <p className="text-slate-500 dark:text-slate-400 break-words">
-                        {err.message}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </section>
+      <div className="grid grid-cols-2 gap-2">
+        {[['Requests / Min', String(requestsMinute)], ['Requests / Day', String(requestsDay)], ['Input Tokens', totalInput.toLocaleString()], ['Output Tokens', totalOutput.toLocaleString()]].map(([label, amount]) => (
+          <div className={panel} key={label}><div className={muted}>{label}</div><div className="mt-1 text-lg font-bold tabular-nums">{amount}</div></div>
+        ))}
       </div>
+      <div className="grid grid-cols-3 gap-1 rounded-lg bg-[#101B2D] p-1">
+        {tabs.map((name) => <button key={name} onClick={() => setTab(name)} className={`rounded-md px-1 py-2 text-[11px] font-semibold ${tab === name ? 'bg-blue-600 text-white' : 'text-slate-400'}`}>{name}</button>)}
+      </div>
+      {tab === 'Overview' && (
+        <section className="space-y-2">
+          <div className="flex items-center justify-between"><h3 className="text-xs font-bold tracking-wider">OVERVIEW</h3><span className="text-[10px] text-emerald-400">LIVE</span></div>
+          <div className={panel}><div className="flex justify-between"><b className="text-xs">API KEY {selected ? String(accounts.indexOf(selected)+1).padStart(2,'0') : '—'} · STATUS</b><span className="text-[10px] text-emerald-400">{statusLabel(selected)}</span></div><div className={muted}>Validity: —</div><div className={muted}>Connection: {selected?.lastSuccessAt ? 'Connected' : '—'}</div></div>
+          <div className={panel}><b className="text-xs">LAST TEST</b><div className={muted}>Result: {selected ? statusLabel(selected) : '—'}</div><div className={muted}>Time: {lastTest ? lastTest.toLocaleString() : '—'}</div><div className={muted}>Error: {selected?.latestError?.message || '—'}</div></div>
+          <div className={panel}><b className="text-xs">REQUESTS</b><div className={muted}>Total: {usageLogs.length}</div><div className={muted}>Success: {successful.length}</div><div className={muted}>Failed: {failed.length + errorLogs.length}</div></div>
+          <div className={panel}><b className="text-xs">MODELS</b><div className={muted}>Discovery: {selected?.discoveredModels.length ?? '—'}</div><div className={muted}>Generation: {selected?.discoveredModels.filter(m => m.supportedGenerationMethods.includes('generateContent')).length ?? '—'}</div></div>
+          <div className="flex items-center justify-between px-1 py-1"><span className={muted}>Auto Refresh</span><b className="text-xs">60 sec</b></div>
+          <button onClick={onCheckAll} disabled={checkingKeyIds.size > 0 || !accounts.some(a => a.enabled)} className="w-full rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold disabled:opacity-40">{checkingKeyIds.size ? 'TESTING KEYS…' : 'REFRESH KEY STATUS'}</button>
+        </section>
+      )}
+      {tab === 'Quota' && <section className={panel}><h3 className="mb-2 text-xs font-bold">QUOTA</h3>{['Requests','Tokens'].map(x => <div key={x} className="mb-3"><div className="flex justify-between text-xs"><b>{x}</b><span className="text-slate-400">Unavailable</span></div><div className="mt-1 h-2 rounded-full bg-slate-700"><div className="h-2 w-0 rounded-full bg-sky-500" /></div><div className={muted}>Limit: Unavailable · Remaining: Unavailable</div></div>)}<p className={muted}>Google Gemini API key endpoints do not expose project quota remaining values.</p></section>}
+      {tab === 'Tokens' && <section className={panel}><h3 className="mb-3 text-xs font-bold">TOKEN USAGE</h3>{[['Input Tokens', totalInput],['Output Tokens', totalOutput],['Total Tokens', totalTokens],['Average Tokens / Request', average]].map(([k,v]) => <div className="flex justify-between border-b border-slate-700 py-2 last:border-0" key={String(k)}><span className="text-xs text-slate-400">{k}</span><b className={value}>{Number(v).toLocaleString()}</b></div>)}</section>}
+      {tab === 'Errors' && <section className={panel}><div className="mb-2 flex items-center justify-between"><h3 className="text-xs font-bold">ERROR DETAILS</h3><button onClick={onClearErrors} disabled={!errorLogs.length} className="text-[10px] text-rose-300 disabled:opacity-40">CLEAR</button></div><div className={muted}>Total Recorded Errors: {errorLogs.length}</div>{errorLogs.slice(0,20).map(e => <div className="border-t border-slate-700 py-2" key={e.id}><b className="text-xs">{e.apiStatus || e.category} · HTTP {e.httpStatus ?? '—'}</b><div className={muted}>{e.message}</div><div className={muted}>Model: {e.modelId || '—'} · {new Date(e.timestamp).toLocaleString()}</div></div>)}{!errorLogs.length && <div className={muted}>No recorded errors</div>}</section>}
+      {tab === 'Models' && <section className={panel}><h3 className="mb-2 text-xs font-bold">MODEL STATUS</h3><div className="mb-2"><div className="text-xs font-semibold">Model Discovery</div><div className={muted}>Discovered: {selected?.discoveredModels.length ?? '—'}</div></div><div className="border-t border-slate-700 pt-2"><div className="text-xs font-semibold">generateContent Support / Test</div>{selected?.discoveredModels.map(m => <div className="flex justify-between gap-2 py-1" key={m.id}><span className="truncate text-[11px]">{m.id}</span><span className={m.supportedGenerationMethods.includes('generateContent') ? 'text-[10px] text-emerald-400' : 'text-[10px] text-rose-300'}>{m.supportedGenerationMethods.includes('generateContent') ? 'SUPPORTED' : 'NOT SUPPORTED'}</span></div>) || <div className={muted}>No discovered models</div>}</div></section>}
+      {tab === 'History' && <section className={panel}><h3 className="mb-2 text-xs font-bold">HISTORY</h3><div className="mb-2 grid grid-cols-3 gap-1">{(['1H','24H','7D'] as const).map(x => <button key={x} onClick={() => setHistoryWindow(x)} className={`rounded-md py-1 text-[10px] ${historyWindow===x?'bg-blue-600 text-white':'bg-slate-700 text-slate-300'}`}>{x}</button>)}</div><div className="mb-2 grid grid-cols-3 gap-1">{(['All','Success','Errors'] as const).map(x => <button key={x} onClick={() => setHistoryResult(x)} className={`rounded-md py-1 text-[10px] ${historyResult===x?'bg-blue-600 text-white':'bg-slate-700 text-slate-300'}`}>{x}</button>)}</div>{history.map((item,i) => <div key={item.time+item.title+i} className="border-t border-slate-700 py-2"><div className="flex justify-between gap-2"><b className="truncate text-xs">{item.title}</b><span className="text-[10px] text-slate-400">{item.result}</span></div><div className={muted}>{item.detail}</div><div className={muted}>{new Date(item.time).toLocaleString()}</div></div>)}{!history.length && <div className={muted}>No history records</div>}</section>}
     </div>
   );
 };
