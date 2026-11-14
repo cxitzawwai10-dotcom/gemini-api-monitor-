@@ -337,7 +337,7 @@ export default function App() {
     }
 
     // Require an explicit GenerateContent capability from the Models API before sending.
-    const cleanModelId = params.modelId.startsWith('models/') ? params.modelId.slice(7) : params.modelId;
+    const cleanModelId = params.modelId.replace('models/', '');
     const selectedModel = acc.discoveredModels.find((model) => model.id === cleanModelId);
     if (!selectedModel) {
       const message = 'This model was not discovered for the selected API key. Refresh models and choose a listed model.';
