@@ -75,11 +75,11 @@ export const TokenUsageChart: React.FC<TokenChartProps> = ({ data }) => {
             Input
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-xs bg-emerald-600 dark:bg-emerald-500" />
+            <span className="h-2.5 w-2.5 rounded-xs bg-purple-600 dark:bg-purple-500" />
             Output
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2.5 w-2.5 rounded-xs bg-amber-500" />
+            <span className="h-2.5 w-2.5 rounded-xs bg-emerald-500" />
             Thinking
           </span>
         </div>
