@@ -346,7 +346,7 @@ export default function App() {
       showToast('error', message);
       return { ok: false, error: message };
     }
-    if (!selectedModel.supportedGenerationMethods.includes('generateContent')) {
+    if (!selectedModel.supportedGenerationMethods.some((method) => ['generateContent', 'interactions'].includes(method))) {
       const methods = selectedModel.supportedGenerationMethods;
       const message = methods.length
         ? 'This model does not support GenerateContent. Supported methods: ' + methods.join(', ') + '.'
