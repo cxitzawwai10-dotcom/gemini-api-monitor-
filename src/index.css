@@ -131,8 +131,9 @@
   .token-usage-page h2,
   .token-usage-page h3 { color: #f8fbff !important; letter-spacing: -.02em; }
   .token-usage-page p,
-  .token-usage-page label,
-  .token-usage-page span { color: inherit; }
+  .token-usage-page label { color: inherit; }
+  /* Keep semantic Tailwind text colors (success/error/status) intact. */
+  .token-usage-page span:not([class*="text-"]) { color: inherit; }
   .token-usage-page .text-slate-500,
   .token-usage-page .text-slate-600,
   .token-usage-page .text-slate-700,
