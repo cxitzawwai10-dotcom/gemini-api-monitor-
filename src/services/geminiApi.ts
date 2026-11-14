@@ -8,15 +8,19 @@ import { classifyGeminiApiError } from '../utils/health';
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 
 const REQUEST_TIMEOUT_MS = 20_000;
+const GENERATION_TIMEOUT_MS = 120_000;
 const MAX_MODEL_PAGES = 100;
 
-function createTimedRequestSignal(parentSignal?: AbortSignal) {
+function createTimedRequestSignal(
+  parentSignal?: AbortSignal,
+  timeoutMs = REQUEST_TIMEOUT_MS
+) {
   const controller = new AbortController();
   let timedOut = false;
   const timeoutId = window.setTimeout(() => {
     timedOut = true;
     controller.abort();
-  }, REQUEST_TIMEOUT_MS);
+  }, timeoutMs);
   const abortFromParent = () => controller.abort();
   if (parentSignal?.aborted) controller.abort();
   else parentSignal?.addEventListener('abort', abortFromParent, { once: true });
@@ -235,6 +239,20 @@ export async function checkKeyAndDiscoverModels(
   }
 }
 
+interface RawInteractionResponse {
+  steps?: Array<{
+    type?: string;
+    content?: Array<{ type?: string; text?: string }>;
+  }>;
+  usage?: {
+    total_input_tokens?: number;
+    total_output_tokens?: number;
+    total_thought_tokens?: number;
+    total_tokens?: number;
+  };
+  error?: { code?: number; message?: string; status?: string };
+}
+
 interface RawGenerateContentResponse {
   candidates?: Array<{
     content?: {
@@ -270,6 +288,94 @@ export interface GenerateTestResult {
 }
 
 /**
+ * Runs a stateless Interactions API request. Used when a model/API response
+ * explicitly reports that GenerateContent is not supported.
+ */
+async function runInteractionsTest(params: {
+  apiKey: string;
+  modelId: string;
+  prompt: string;
+}): Promise<GenerateTestResult> {
+  const startedAt = performance.now();
+  const timestamp = new Date().toISOString();
+  const cleanModelId = params.modelId.replace(/^models\//, '');
+  const endpoint = `${GEMINI_API_BASE}/interactions`;
+  const timedRequest = createTimedRequestSignal(undefined, GENERATION_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': params.apiKey.trim(),
+      },
+      body: JSON.stringify({ model: cleanModelId, input: params.prompt, store: false }),
+      signal: timedRequest.signal,
+    });
+
+    let payload: RawInteractionResponse = {};
+    try {
+      payload = (await response.json()) as RawInteractionResponse;
+    } catch {
+      // Preserve the HTTP status when a gateway returns a non-JSON body.
+    }
+
+    const latencyMs = Math.round(performance.now() - startedAt);
+    if (!response.ok) {
+      const classified = classifyGeminiApiError({
+        httpStatus: response.status,
+        apiStatus: payload.error?.status,
+        apiMessage: payload.error?.message || `HTTP ${response.status} ${response.statusText}`,
+      });
+      return {
+        ok: false, text: '', promptTokens: 0, inputTokens: 0, outputTokens: 0,
+        thinkingTokens: 0, totalTokens: 0, httpStatus: response.status,
+        errorInfo: {
+          category: classified.errorCategory, httpStatus: response.status,
+          apiStatus: classified.apiStatus, message: classified.message,
+          timestamp, endpoint, modelId: cleanModelId,
+        }, latencyMs, timestamp,
+      };
+    }
+
+    const usage = payload.usage || {};
+    const inputTokens = usage.total_input_tokens ?? 0;
+    const outputTokens = usage.total_output_tokens ?? 0;
+    const thinkingTokens = usage.total_thought_tokens ?? 0;
+    const totalTokens = usage.total_tokens ?? inputTokens + outputTokens + thinkingTokens;
+    const text = (payload.steps || [])
+      .filter((step) => step.type === 'model_output')
+      .flatMap((step) => step.content || [])
+      .filter((part) => part.type === 'text' && part.text)
+      .map((part) => part.text || '')
+      .join('\n')
+      .trim();
+
+    return {
+      ok: true, text: text || '(Empty text response)', promptTokens: inputTokens,
+      inputTokens, outputTokens, thinkingTokens, totalTokens,
+      httpStatus: response.status, latencyMs, timestamp,
+    };
+  } catch (err) {
+    const latencyMs = Math.round(performance.now() - startedAt);
+    const message = timedRequest.didTimeout()
+      ? `Generation request timed out after ${GENERATION_TIMEOUT_MS / 1000} seconds.`
+      : err instanceof Error ? `Network error: ${err.message}` : 'Network error during Interactions request.';
+    const classified = classifyGeminiApiError({ isNetworkFailure: true, apiMessage: message });
+    return {
+      ok: false, text: '', promptTokens: 0, inputTokens: 0, outputTokens: 0,
+      thinkingTokens: 0, totalTokens: 0,
+      errorInfo: {
+        category: classified.errorCategory, message: classified.message,
+        timestamp, endpoint, modelId: cleanModelId,
+      }, latencyMs, timestamp,
+    };
+  } finally {
+    timedRequest.cleanup();
+  }
+}
+
+/**
  * Executes an explicit user-triggered GenerateContent request against a specific
  * discovered model and captures real usageMetadata from the API response.
  */
@@ -284,7 +390,7 @@ export async function runGenerateContentTest(params: {
   const cleanModelId = params.modelId.replace(/^models\//, '');
   const endpoint = `${GEMINI_API_BASE}/models/${encodeURIComponent(cleanModelId)}:generateContent`;
 
-  const timedRequest = createTimedRequestSignal(params.signal);
+  const timedRequest = createTimedRequestSignal(params.signal, GENERATION_TIMEOUT_MS);
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -313,12 +419,18 @@ export async function runGenerateContentTest(params: {
     const latencyMs = Math.round(performance.now() - startedAt);
 
     if (!response.ok) {
+      const apiMessage = payload.error?.message || `HTTP ${response.status} ${response.statusText}`;
+      if (response.status === 400 && /only supports interactions/i.test(apiMessage)) {
+        return await runInteractionsTest({
+          apiKey: params.apiKey,
+          modelId: cleanModelId,
+          prompt: params.prompt,
+        });
+      }
       const classified = classifyGeminiApiError({
         httpStatus: response.status,
         apiStatus: payload.error?.status,
-        apiMessage:
-          payload.error?.message ||
-          `HTTP ${response.status} ${response.statusText}`,
+        apiMessage,
       });
 
       return {

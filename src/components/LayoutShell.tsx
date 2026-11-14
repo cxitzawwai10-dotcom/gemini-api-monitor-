@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Activity,
+  ArrowLeftRight,
   Cpu,
   Gauge,
   KeyRound,
@@ -181,6 +182,18 @@ export const LayoutShell: React.FC<LayoutShellProps> = ({
                 <Moon className="w-4 h-4" />
               )}
             </button>
+
+            <a
+              href="https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Faistudio.google.com%2Fapp%2Fapikey&service=lso"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Switch Google account in Google AI Studio"
+              title="Switch Google account"
+              className="min-h-[40px] px-2.5 sm:px-3 rounded-xl border border-cyan-300/40 dark:border-cyan-300/25 bg-gradient-to-br from-cyan-500/15 via-blue-500/10 to-violet-500/15 text-cyan-800 dark:text-cyan-200 text-xs sm:text-sm font-semibold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 shadow-[0_4px_12px_rgba(34,211,238,.12)]"
+            >
+              <ArrowLeftRight className="w-4 h-4" aria-hidden="true" />
+              <span>Switch</span>
+            </a>
 
             <button
               type="button"

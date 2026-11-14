@@ -29,7 +29,7 @@ import {
   DEFAULT_PRICING_CATALOG,
   formatUsd,
 } from '../utils/pricing';
-import { CostBreakdownBars, CostChart, TokenUsageChart } from './Charts';
+import { CostBreakdownBars, CostChart, TokenDistributionDonut, TokenUsageChart } from './Charts';
 import { ConfirmDialog } from './ConfirmDialog';
 
 interface TokenUsagePageProps {
@@ -70,7 +70,7 @@ export const TokenUsagePage: React.FC<TokenUsagePageProps> = ({
   const availableGenModels = useMemo(() => {
     if (!activeTestAccount) return [];
     return activeTestAccount.discoveredModels.filter((m) =>
-      m.supportedGenerationMethods.includes('generateContent')
+      m.supportedGenerationMethods.some((method) => ['generateContent', 'interactions'].includes(method)) || m.id === 'gemini-4-hydrogen'
     );
   }, [activeTestAccount]);
 
@@ -505,55 +505,40 @@ export const TokenUsagePage: React.FC<TokenUsagePageProps> = ({
         </div>
       </section>
 
-      {/* Token & Cost Summary KPIs */}
+      {/* Premium 3D Token KPIs */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-          <div className="text-xs text-slate-500 dark:text-slate-400">
-            Filtered Tokens (App-Recorded)
-          </div>
-          <div className="mt-1.5 text-xl sm:text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
-            {totals.totalTokens.toLocaleString()}
-          </div>
-          <div className="mt-1 text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
-            {filteredLogs.length} requests
-          </div>
+        <div className="usage-kpi usage-kpi-input rounded-2xl p-4">
+          <div className="text-xs text-sky-100/80">Input Tokens</div>
+          <div className="mt-1.5 text-xl sm:text-2xl font-bold font-mono tabular-nums text-white">{totals.inputTokens.toLocaleString()}</div>
+          <div className="mt-1 text-xs text-sky-100/70">Prompt tokens</div>
         </div>
-
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-          <div className="text-xs text-slate-500 dark:text-slate-400">
-            Input / Output / Thinking
-          </div>
-          <div className="mt-1.5 text-sm font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
-            {totals.inputTokens.toLocaleString()} / {totals.outputTokens.toLocaleString()} /{' '}
-            {totals.thinkingTokens.toLocaleString()}
-          </div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            From GenerateContent usageMetadata
-          </div>
+        <div className="usage-kpi usage-kpi-output rounded-2xl p-4">
+          <div className="text-xs text-purple-100/80">Output Tokens</div>
+          <div className="mt-1.5 text-xl sm:text-2xl font-bold font-mono tabular-nums text-white">{totals.outputTokens.toLocaleString()}</div>
+          <div className="mt-1 text-xs text-purple-100/70">Generated response</div>
         </div>
-
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-          <div className="text-xs text-slate-500 dark:text-slate-400">
-            Est. Filtered Cost (Not Billing)
-          </div>
-          <div className="mt-1.5 text-xl sm:text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
-            {formatUsd(totals.totalCostUsd)}
-          </div>
-          <div className="mt-1 text-xs font-mono tabular-nums text-slate-500 dark:text-slate-400">
-            In {formatUsd(totals.inputCostUsd)} · Out {formatUsd(totals.outputCostUsd)} · Think{' '}
-            {formatUsd(totals.thinkingCostUsd)}
-          </div>
+        <div className="usage-kpi usage-kpi-thinking rounded-2xl p-4">
+          <div className="text-xs text-emerald-100/80">Thinking Tokens</div>
+          <div className="mt-1.5 text-xl sm:text-2xl font-bold font-mono tabular-nums text-white">{totals.thinkingTokens.toLocaleString()}</div>
+          <div className="mt-1 text-xs text-emerald-100/70">Model reasoning usage</div>
         </div>
+        <div className="usage-kpi usage-kpi-total rounded-2xl p-4">
+          <div className="text-xs text-amber-100/80">Total Tokens</div>
+          <div className="mt-1.5 text-xl sm:text-2xl font-bold font-mono tabular-nums text-white">{totals.totalTokens.toLocaleString()}</div>
+          <div className="mt-1 text-xs text-amber-100/70">{filteredLogs.length} requests</div>
+        </div>
+      </section>
 
-        <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
-          <div className="text-xs text-slate-500 dark:text-slate-400">
-            Daily / Monthly Est. Cost
+      <section className="usage-cost-card rounded-2xl p-4 sm:p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wider text-amber-100/75">Estimated Cost · Not Actual Billing</div>
+            <div className="mt-1 text-2xl sm:text-3xl font-bold font-mono tabular-nums text-white">{formatUsd(totals.totalCostUsd)}</div>
+            <div className="mt-1 text-xs text-slate-300">Input {formatUsd(totals.inputCostUsd)} · Output {formatUsd(totals.outputCostUsd)} · Thinking {formatUsd(totals.thinkingCostUsd)}</div>
           </div>
-          <div className="mt-1.5 text-xl sm:text-2xl font-bold font-mono tabular-nums text-slate-900 dark:text-slate-100">
-            {formatUsd(totals.todayCostUsd)} / {formatUsd(totals.monthCostUsd)}
-          </div>
-          <div className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-            Today vs Current Month (Est.)
+          <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+            <div className="text-[11px] text-slate-300">Today / This month</div>
+            <div className="mt-1 text-sm font-bold font-mono text-white">{formatUsd(totals.todayCostUsd)} / {formatUsd(totals.monthCostUsd)}</div>
           </div>
         </div>
       </section>
@@ -564,7 +549,14 @@ export const TokenUsagePage: React.FC<TokenUsagePageProps> = ({
           <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-3">
             App-Recorded Token Consumption
           </h3>
-          <TokenUsageChart data={dailySeries} />
+          <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] gap-4 items-center">
+            <TokenUsageChart data={dailySeries} />
+            <TokenDistributionDonut
+              inputTokens={totals.inputTokens}
+              outputTokens={totals.outputTokens}
+              thinkingTokens={totals.thinkingTokens}
+            />
+          </div>
         </section>
 
         <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5">

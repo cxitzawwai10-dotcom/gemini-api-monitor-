@@ -195,3 +195,30 @@
   .token-usage-page > section:nth-of-type(3) .text-xl,
   .token-usage-page > section:nth-of-type(3) .text-2xl { font-size: 1.15rem; }
 }
+
+
+/* Agreed Premium 3D neon usage palette */
+@layer components {
+  .token-usage-page .usage-kpi,
+  .token-usage-page .usage-cost-card {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,.18);
+    box-shadow: 0 12px 26px rgba(0,0,0,.30), 0 4px 9px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.20);
+    transform: translateZ(0);
+  }
+  .token-usage-page .usage-kpi::before,
+  .token-usage-page .usage-cost-card::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 2px;
+    background: linear-gradient(90deg, rgba(255,255,255,.75), transparent 75%);
+    pointer-events: none;
+  }
+  .token-usage-page .usage-kpi-input { background: linear-gradient(145deg,#075985,#1d4ed8 62%,#172554); border-color: rgba(56,189,248,.65); }
+  .token-usage-page .usage-kpi-output { background: linear-gradient(145deg,#701a75,#7c3aed 62%,#2e1065); border-color: rgba(192,132,252,.65); }
+  .token-usage-page .usage-kpi-thinking { background: linear-gradient(145deg,#065f46,#059669 62%,#022c22); border-color: rgba(52,211,153,.65); }
+  .token-usage-page .usage-kpi-total { background: linear-gradient(145deg,#92400e,#d97706 62%,#451a03); border-color: rgba(251,191,36,.75); }
+  .token-usage-page .usage-cost-card { background: linear-gradient(135deg,#172554,#312e81 48%,#581c87); border-color: rgba(129,140,248,.55); }
+}

@@ -35,7 +35,7 @@
       (function () {
         try {
           var saved = localStorage.getItem('gp_theme');
-          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var prefersDark = true;
           if (saved === 'dark' || (!saved && prefersDark)) {
             document.documentElement.classList.add('dark');
           }

@@ -26,7 +26,7 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
 }) => {
   const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [onlyGenerateContent, setOnlyGenerateContent] = useState(false);
+  const [onlyTextGeneration, setOnlyTextGeneration] = useState(true);
   const [showMatrix, setShowMatrix] = useState(true);
   const [showExplorer, setShowExplorer] = useState(true);
 
@@ -68,8 +68,8 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
     return Array.from(map.values())
       .filter((m) => {
         if (
-          onlyGenerateContent &&
-          !m.supportedGenerationMethods.includes('generateContent')
+          onlyTextGeneration &&
+          !m.supportedGenerationMethods.some((method) => ['generateContent', 'interactions'].includes(method)) && m.id !== 'gemini-4-hydrogen'
         ) {
           return false;
         }
@@ -83,7 +83,7 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
         return true;
       })
       .sort((a, b) => a.id.localeCompare(b.id));
-  }, [accounts, onlyGenerateContent, searchQuery]);
+  }, [accounts, onlyTextGeneration, searchQuery]);
 
   const displayedAccounts = useMemo(() => {
     if (selectedAccountId === 'ALL') return accounts;
@@ -127,11 +127,11 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
           <label className="min-h-[44px] px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
             <input
               type="checkbox"
-              checked={onlyGenerateContent}
-              onChange={(e) => setOnlyGenerateContent(e.target.checked)}
+              checked={onlyTextGeneration}
+              onChange={(e) => setOnlyTextGeneration(e.target.checked)}
               className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
             />
-            <span>Supports generateContent</span>
+            <span>Text generation ready (GenerateContent / Interactions)</span>
           </label>
         </div>
       </div>
@@ -273,8 +273,8 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
             const isChecking = checkingKeyIds.has(acc.id);
             const filteredModels = acc.discoveredModels.filter((m) => {
               if (
-                onlyGenerateContent &&
-                !m.supportedGenerationMethods.includes('generateContent')
+                onlyTextGeneration &&
+                !m.supportedGenerationMethods.some((method) => ['generateContent', 'interactions'].includes(method))
               ) {
                 return false;
               }
@@ -338,7 +338,7 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
                     <span>
                       {acc.discoveredModels.length === 0
                         ? 'No models returned by Models API for this key.'
-                        : 'No models match your current filter.'}
+                        : 'No text-generation models match this filter. Refresh the API model list or turn off the text-only filter to view all discovered models.'}
                     </span>
                   </div>
                 ) : (
@@ -393,7 +393,7 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
                             </td>
                             <td className="px-3.5 py-2.5 whitespace-nowrap">
                               <span className="text-emerald-700 dark:text-emerald-400 font-medium">
-                                Listed by API
+                                {m.supportedGenerationMethods.includes('generateContent') ? 'Text · GenerateContent' : m.supportedGenerationMethods.includes('interactions') ? 'Text · Interactions' : 'Listed by API'}
                               </span>
                             </td>
                           </tr>

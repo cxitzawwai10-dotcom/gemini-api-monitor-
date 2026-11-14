@@ -25,6 +25,9 @@ function openDb(): Promise<IDBDatabase> {
       return;
     }
     const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onblocked = () => {
+      reject(new Error('Local database is busy in another app tab. Close other GeminiPulse tabs, then retry.'));
+    };
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(STORE_ACCOUNTS)) {
@@ -40,7 +43,11 @@ function openDb(): Promise<IDBDatabase> {
         db.createObjectStore(STORE_SETTINGS, { keyPath: 'key' });
       }
     };
-    request.onsuccess = () => resolve(request.result);
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
     request.onerror = () =>
       reject(request.error || new Error('Failed to open IndexedDB.'));
   });
@@ -141,9 +148,9 @@ export async function loadAllMonitorData(): Promise<LoadedMonitorState> {
         getSetting<QuotaReferenceLimit[]>(KEY_QUOTA_REFS),
       ]);
 
-    accounts.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-    usageLogs.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
-    errorLogs.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    accounts.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+    usageLogs.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
+    errorLogs.sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''));
 
     return {
       accounts,
@@ -155,15 +162,11 @@ export async function loadAllMonitorData(): Promise<LoadedMonitorState> {
           : DEFAULT_PRICING_CATALOG,
       quotaReferences: quotaReferences || [],
     };
-  } catch {
-    // Graceful fallback if IndexedDB is blocked
-    return {
-      accounts: [],
-      usageLogs: [],
-      errorLogs: [],
-      pricingCatalog: DEFAULT_PRICING_CATALOG,
-      quotaReferences: [],
-    };
+  } catch (error) {
+    // Never disguise a storage failure as an empty account list. Doing so
+    // makes users think their saved keys have disappeared.
+    const detail = error instanceof Error ? error.message : 'Unknown IndexedDB error';
+    throw new Error(`Could not load saved GeminiPulse data: ${detail}`);
   }
 }
 
