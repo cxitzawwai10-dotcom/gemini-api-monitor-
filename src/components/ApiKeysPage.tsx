@@ -3,6 +3,7 @@ import {
   Check,
   Copy,
   Edit3,
+  ExternalLink,
   Eye,
   EyeOff,
   KeyRound,
@@ -180,6 +181,17 @@ export const ApiKeysPage: React.FC<ApiKeysPageProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          <a
+            href="https://aistudio.google.com/app/apikey"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Get a Gemini API key from Google AI Studio"
+            className="min-h-[44px] px-4 py-2 rounded-xl border border-blue-200 dark:border-blue-900/70 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-950/70 text-sm font-semibold inline-flex items-center gap-2 whitespace-nowrap shrink-0"
+          >
+            <KeyRound className="w-4 h-4" aria-hidden="true" />
+            <span>Get API Key</span>
+            <ExternalLink className="w-3.5 h-3.5" aria-hidden="true" />
+          </a>
           <button
             type="button"
             onClick={() => void onCheckAll()}
