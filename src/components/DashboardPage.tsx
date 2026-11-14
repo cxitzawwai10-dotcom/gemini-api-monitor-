@@ -24,6 +24,7 @@ interface DashboardPageProps {
   onNavigate: (page: PageId) => void;
   onSelectAccount: (account: ApiKeyAccount) => void;
   onCheckAll: () => void;
+  onClearErrors: () => void;
 }
 
 const panel = 'rounded-2xl border border-white/10 bg-[#101a30] shadow-[0_8px_24px_rgba(0,0,0,.18)]';
