@@ -346,11 +346,11 @@ export default function App() {
       showToast('error', message);
       return { ok: false, error: message };
     }
-    if (!selectedModel.supportedGenerationMethods.some((method) => ['generateContent', 'interactions'].includes(method))) {
+    if (!selectedModel.supportedGenerationMethods.some((method) => ['generateContent', 'interactions'].includes(method)) && selectedModel.id !== 'gemini-4-hydrogen') {
       const methods = selectedModel.supportedGenerationMethods;
       const message = methods.length
-        ? 'This model does not support GenerateContent. Supported methods: ' + methods.join(', ') + '.'
-        : 'This model has no supported generation methods listed by the Models API, so GenerateContent is blocked.';
+        ? 'This model does not support the app test APIs. Supported methods: ' + methods.join(', ') + '.'
+        : 'This model has no supported test-generation API listed by the Models API, so the request is blocked.';
       showToast('error', message);
       return { ok: false, error: message };
     }
