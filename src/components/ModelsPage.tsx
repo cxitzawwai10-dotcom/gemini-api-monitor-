@@ -69,7 +69,7 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
       .filter((m) => {
         if (
           onlyTextGeneration &&
-          !m.supportedGenerationMethods.some((method) => ['generateContent', 'interactions'].includes(method))
+          !m.supportedGenerationMethods.some((method) => ['generateContent', 'interactions'].includes(method)) && m.id !== 'gemini-4-hydrogen'
         ) {
           return false;
         }
