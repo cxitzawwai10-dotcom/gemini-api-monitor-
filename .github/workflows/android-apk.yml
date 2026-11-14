@@ -82,8 +82,8 @@ jobs:
           version = os.environ["APP_VERSION"]
           code = os.environ["APP_VERSION_CODE"]
 
-          s, n1 = re.subn(r'versionCode\\s+\\d+', f'versionCode {code}', s, count=1)
-          s, n2 = re.subn(r'versionName\\s+["\\'][^"\\']+["\\']', f'versionName "{version}"', s, count=1)
+          s, n1 = re.subn(r'versionCode\s+\d+', f'versionCode {code}', s, count=1)
+          s, n2 = re.subn(r'versionName\s+["\'][^"\']+["\']', f'versionName "{version}"', s, count=1)
           if n1 != 1 or n2 != 1:
               raise SystemExit("Could not safely set Android versionCode/versionName")
 
@@ -98,13 +98,13 @@ jobs:
               }
           '''
           if "signingConfigs {" not in s:
-              s, inserted = re.subn(r'(?m)^(\\s*)buildTypes\\s*\\{', signing + r'\\n\\1buildTypes {', s, count=1)
+              s, inserted = re.subn(r'(?m)^(\s*)buildTypes\s*\{', signing + r'\n\1buildTypes {', s, count=1)
               if inserted != 1:
                   raise SystemExit("Could not insert release signing configuration")
 
-          pattern = r'(?s)(buildTypes\\s*\\{.*?\\brelease\\s*\\{)'
+          pattern = r'(?s)(buildTypes\s*\{.*?\brelease\s*\{)'
           if "signingConfig signingConfigs.release" not in s:
-              s, attached = re.subn(pattern, r'\\1\\n            signingConfig signingConfigs.release', s, count=1)
+              s, attached = re.subn(pattern, r'\1\n            signingConfig signingConfigs.release', s, count=1)
               if attached != 1:
                   raise SystemExit("Could not attach signing config to buildTypes.release")
 
