@@ -206,6 +206,11 @@ export const TokenUsagePage: React.FC<TokenUsagePageProps> = ({
           ? res.outputText || 'Request completed.'
           : res.error || 'Request failed.',
       });
+    } catch (err) {
+      setLastTestOutput({
+        ok: false,
+        message: err instanceof Error ? err.message : 'Request failed unexpectedly.',
+      });
     } finally {
       setIsGenerating(false);
     }
