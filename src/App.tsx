@@ -61,7 +61,7 @@ function triggerDownload(filename: string, content: string, mimeType: string) {
   URL.revokeObjectURL(url);
 }
 
-export default function App() {
+function AppContent() {
   const [activePage, setActivePage] = useState<PageId>(PageId.Dashboard);
   const [theme, setTheme] = useState<'light' | 'dark'>(() =>
     document.documentElement.classList.contains('dark') ? 'dark' : 'light'
@@ -707,5 +707,49 @@ export default function App() {
         </div>
       )}
     </>
+  );
+}
+
+class AppErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#090D16] px-5 py-16 text-center text-slate-100">
+          <div className="mx-auto max-w-md rounded-2xl border border-rose-400/25 bg-[#101a30] p-6 shadow-xl">
+            <AlertTriangle className="mx-auto h-10 w-10 text-rose-400" />
+            <h1 className="mt-4 text-xl font-bold">Something went wrong</h1>
+            <p className="mt-2 text-sm leading-relaxed text-slate-300">
+              The app hit an unexpected screen error. Your saved API keys and history have not been intentionally changed.
+            </p>
+            <button
+              type="button"
+              onClick={() => window.location.reload()}
+              className="mt-5 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white"
+            >
+              <RefreshCw className="h-4 w-4" /> Reload App
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+export default function App() {
+  return (
+    <AppErrorBoundary>
+      <AppContent />
+    </AppErrorBoundary>
   );
 }
