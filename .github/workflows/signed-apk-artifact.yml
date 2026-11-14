@@ -105,7 +105,7 @@ jobs:
               if n != 1:
                   raise SystemExit("Could not insert release signing configuration")
           if "signingConfig signingConfigs.release" not in s:
-              s, n = re.subn(r'(?s)(buildTypes\\s*\\{.*?\\brelease\\s*\\{)', r'\1\n            signingConfig signingConfigs.release', s, count=1)
+              s, n = re.subn(r'(?s)(buildTypes\s*\{.*?\brelease\s*\{)', r'\1\n            signingConfig signingConfigs.release', s, count=1)
               if n != 1:
                   raise SystemExit("Could not attach release signing configuration")
           p.write_text(s)
