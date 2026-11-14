@@ -337,7 +337,9 @@ export default function App() {
     }
 
     // Normalize the Models API resource prefix, then require explicit GenerateContent support.
-    const cleanModelId = params.modelId.replace('models/', '');
+    const cleanModelId = params.modelId.startsWith('models/')
+      ? params.modelId.slice('models/'.length)
+      : params.modelId;
     const selectedModel = acc.discoveredModels.find((model) => model.id === cleanModelId);
     if (!selectedModel) {
       const message = 'This model was not discovered for the selected API key. Refresh models and choose a listed model.';
