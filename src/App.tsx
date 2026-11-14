@@ -216,6 +216,26 @@ export default function App() {
     };
   }, [checkAllEnabledKeys]);
 
+  // Keep key health reasonably fresh while the app is open. The Models List
+  // check is lightweight and does not consume text-generation tokens.
+  useEffect(() => {
+    if (isHydrating) return;
+
+    const refreshIfVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void checkAllEnabledKeys();
+      }
+    };
+
+    const intervalId = window.setInterval(refreshIfVisible, 2 * 60 * 1000);
+    document.addEventListener('visibilitychange', refreshIfVisible);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', refreshIfVisible);
+    };
+  }, [isHydrating, checkAllEnabledKeys]);
+
   const handleAddKey = async (input: {
     accountName: string;
     googleAccountLabel?: string;
