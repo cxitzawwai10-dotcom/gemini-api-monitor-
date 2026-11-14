@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { CheckCircle2, Loader2, X, XCircle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, RefreshCw, X, XCircle } from 'lucide-react';
 import {
   ApiErrorRecord,
   ApiKeyAccount,
@@ -68,6 +68,8 @@ export default function App() {
   );
 
   const [isHydrating, setIsHydrating] = useState(true);
+  const [startupError, setStartupError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [accounts, setAccounts] = useState<ApiKeyAccount[]>([]);
   const [usageLogs, setUsageLogs] = useState<UsageRecord[]>([]);
   const [errorLogs, setErrorLogs] = useState<ApiErrorRecord[]>([]);
@@ -196,25 +198,41 @@ export default function App() {
   // Hydrate from IndexedDB on startup & run automatic health checks on enabled keys
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const data = await loadAllMonitorData();
-      if (cancelled) return;
-      setAccounts(data.accounts);
-      setUsageLogs(data.usageLogs);
-      setErrorLogs(data.errorLogs);
-      setPricingCatalog(data.pricingCatalog);
-      setQuotaReferences(data.quotaReferences);
-      setIsHydrating(false);
+    setIsHydrating(true);
+    setStartupError(null);
 
-      if (data.accounts.some((a) => a.enabled)) {
-        void checkAllEnabledKeys(data.accounts);
+    (async () => {
+      try {
+        const data = await loadAllMonitorData();
+        if (cancelled) return;
+
+        // Restore all locally saved data before starting any network checks.
+        setAccounts(data.accounts);
+        setUsageLogs(data.usageLogs);
+        setErrorLogs(data.errorLogs);
+        setPricingCatalog(data.pricingCatalog);
+        setQuotaReferences(data.quotaReferences);
+        setStartupError(null);
+        setIsHydrating(false);
+
+        if (data.accounts.some((a) => a.enabled)) {
+          void checkAllEnabledKeys(data.accounts);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        setStartupError(
+          error instanceof Error
+            ? error.message
+            : 'Saved data could not be loaded. Please try again.'
+        );
+        setIsHydrating(false);
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [checkAllEnabledKeys]);
+  }, [checkAllEnabledKeys, loadAttempt]);
 
   // Keep key health reasonably fresh while the app is open. The Models List
   // check is lightweight and does not consume text-generation tokens.
@@ -543,10 +561,29 @@ export default function App() {
         swipeHandlers={swipeHandlers}
       >
         {isHydrating ? (
-          <div className="flex items-center justify-center py-20 gap-3 text-sm text-slate-500 dark:text-slate-400">
-            <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
-            <span>Loading saved API keys & monitor data...</span>
+          <div role="status" aria-live="polite" className="flex flex-col items-center justify-center gap-3 py-24 text-center text-sm text-slate-500 dark:text-slate-400">
+            <Loader2 className="h-7 w-7 animate-spin text-cyan-400" />
+            <span className="font-medium">Restoring your saved API keys and history...</span>
+            <span className="text-xs text-slate-500">This may take a moment</span>
           </div>
+        ) : startupError ? (
+          <section role="alert" className="mx-auto mt-8 max-w-lg rounded-2xl border border-rose-400/30 bg-rose-500/10 p-5 text-center shadow-lg">
+            <AlertTriangle className="mx-auto h-9 w-9 text-rose-400" />
+            <h2 className="mt-3 text-lg font-bold text-slate-900 dark:text-white">Saved data could not be opened</h2>
+            <p className="mt-2 break-words text-sm leading-relaxed text-rose-700 dark:text-rose-200">{startupError}</p>
+            <p className="mt-2 text-xs text-slate-600 dark:text-slate-400">Your saved data has not been deleted. Try loading it again.</p>
+            <button
+              type="button"
+              onClick={() => {
+                setStartupError(null);
+                setIsHydrating(true);
+                setLoadAttempt((attempt) => attempt + 1);
+              }}
+              className="mt-4 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white"
+            >
+              <RefreshCw className="h-4 w-4" /> Try Again
+            </button>
+          </section>
         ) : (
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
