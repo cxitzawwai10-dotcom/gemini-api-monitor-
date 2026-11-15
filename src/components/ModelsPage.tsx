@@ -56,9 +56,11 @@ function matchesSearch(model: DiscoveredModel, query: string): boolean {
 }
 
 function latestTimestamp(accounts: ApiKeyAccount[]): string | undefined {
-  const timestamps = accounts
-    .map((account) => account.modelsUpdatedAt || account.lastCheckedAt)
-    .filter((value): value is string => Boolean(value));
+  const timestamps = accounts.flatMap((account) =>
+    [account.modelsUpdatedAt, account.lastCheckedAt].filter(
+      (value): value is string => Boolean(value)
+    )
+  );
   timestamps.sort((a, b) => Date.parse(b) - Date.parse(a));
   return timestamps[0];
 }
