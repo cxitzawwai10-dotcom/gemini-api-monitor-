@@ -20,11 +20,6 @@ interface ModelsPageProps {
 const PREVIEW_PATTERN =
   /(preview|experimental|(?:^|[-_.])(?:exp|alpha|beta)(?:[-_.]|$))/i;
 
-// Keep clearly task-specific non-text model families out of the story-generation list.
-// Their original discovery records remain visible in the expandable archive below.
-const NON_TEXT_TASK_PATTERN =
-  /(text[-_ ]?to[-_ ]?speech|\btts\b|embedding|imagen|image[-_ ]?generation|\bveo\b|video[-_ ]?generation|music|native[-_ ]?audio)/i;
-
 function modelText(model: DiscoveredModel): string {
   return [
     model.id,
@@ -34,11 +29,8 @@ function modelText(model: DiscoveredModel): string {
   ].join(' ');
 }
 
-function isTextGenerationCandidate(model: DiscoveredModel): boolean {
-  return (
-    model.supportedGenerationMethods.includes('generateContent') &&
-    !NON_TEXT_TASK_PATTERN.test(modelText(model))
-  );
+function isGenerateContentSupported(model: DiscoveredModel): boolean {
+  return model.supportedGenerationMethods.includes('generateContent');
 }
 
 function isPreviewModel(model: DiscoveredModel): boolean {
@@ -114,26 +106,46 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
     const models = new Map<string, DiscoveredModel>();
     for (const account of displayedAccounts) {
       for (const model of account.discoveredModels) {
-        if (!models.has(model.id)) models.set(model.id, model);
+        const existing = models.get(model.id);
+        if (!existing) {
+          models.set(model.id, {
+            ...model,
+            supportedGenerationMethods: [...new Set(model.supportedGenerationMethods)],
+          });
+          continue;
+        }
+
+        // Union methods across keys so one incomplete record cannot hide support
+        // confirmed by another key or project.
+        models.set(model.id, {
+          ...existing,
+          supportedGenerationMethods: [
+            ...new Set([
+              ...existing.supportedGenerationMethods,
+              ...model.supportedGenerationMethods,
+            ]),
+          ],
+        });
       }
     }
     return Array.from(models.values()).sort((a, b) => a.id.localeCompare(b.id));
   }, [displayedAccounts]);
 
-  const textCandidates = useMemo(
-    () => allDiscoveredModels.filter(isTextGenerationCandidate),
+  const generateContentModels = useMemo(
+    () => allDiscoveredModels.filter(isGenerateContentSupported),
     [allDiscoveredModels]
   );
+
   const stableModels = useMemo(
-    () => textCandidates.filter((model) => !isPreviewModel(model)),
-    [textCandidates]
+    () => generateContentModels.filter((model) => !isPreviewModel(model)),
+    [generateContentModels]
   );
   const previewModels = useMemo(
-    () => textCandidates.filter(isPreviewModel),
-    [textCandidates]
+    () => generateContentModels.filter(isPreviewModel),
+    [generateContentModels]
   );
   const hiddenModels = useMemo(
-    () => allDiscoveredModels.filter((model) => !isTextGenerationCandidate(model)),
+    () => allDiscoveredModels.filter((model) => !isGenerateContentSupported(model)),
     [allDiscoveredModels]
   );
 
@@ -167,10 +179,10 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
         <div className="flex items-center justify-between gap-3">
           <div className="min-w-0">
             <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
-              Text Generation Models
+              Models Supporting generateContent
             </h2>
             <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-              Models listed with generateContent support
+              Models whose discovery metadata lists generateContent
             </p>
           </div>
           <button
@@ -249,7 +261,7 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
               Supported Models
             </h2>
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Stable generateContent models
+              Stable models with generateContent support
             </p>
           </div>
           <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-1 text-[11px] font-semibold tabular-nums text-slate-600 dark:text-slate-300">
@@ -348,7 +360,7 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
               All Discovered Models
             </span>
             <span className="mt-0.5 block text-[10px] text-slate-500 dark:text-slate-400">
-              Includes unsupported and non-text models; discovery data is retained
+              Includes all discovered models; discovery data is retained
             </span>
           </span>
           <span className="flex shrink-0 items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
@@ -398,7 +410,6 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
                               <span>{hasGenerateContent ? 'generateContent supported' : 'generateContent not listed'}</span>
                               <span>{model.supportedGenerationMethods.join(', ') || 'No methods listed'}</span>
                               {isPreviewModel(model) ? <span>Preview / Experimental</span> : null}
-                              {!isTextGenerationCandidate(model) && hasGenerateContent ? <span>Non-text task family</span> : null}
                             </div>
                           </div>
                         );
