@@ -1,15 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   AlertCircle,
-  Check,
   ChevronDown,
   ChevronUp,
   Cpu,
-  Minus,
   RefreshCw,
   Search,
 } from 'lucide-react';
-import { ApiKeyAccount, DiscoveredModel, KeyHealthStatus } from '../types/monitor';
+import { ApiKeyAccount, DiscoveredModel } from '../types/monitor';
 import { formatRelativeTime } from '../utils/health';
 import { StatusBadge } from './StatusBadge';
 
@@ -19,6 +17,74 @@ interface ModelsPageProps {
   onRefreshKey: (accountId: string) => Promise<void>;
 }
 
+const PREVIEW_PATTERN =
+  /(preview|experimental|(?:^|[-_.])(?:exp|alpha|beta)(?:[-_.]|$))/i;
+
+function modelText(model: DiscoveredModel): string {
+  return [
+    model.id,
+    model.displayName,
+    model.version || '',
+    model.description || '',
+  ].join(' ');
+}
+
+function isGenerateContentSupported(model: DiscoveredModel): boolean {
+  return model.supportedGenerationMethods.includes('generateContent');
+}
+
+function isPreviewModel(model: DiscoveredModel): boolean {
+  return PREVIEW_PATTERN.test(modelText(model));
+}
+
+function matchesSearch(model: DiscoveredModel, query: string): boolean {
+  if (!query.trim()) return true;
+  const value = query.trim().toLowerCase();
+  return (
+    model.id.toLowerCase().includes(value) ||
+    model.displayName.toLowerCase().includes(value) ||
+    (model.description || '').toLowerCase().includes(value)
+  );
+}
+
+function latestTimestamp(accounts: ApiKeyAccount[]): string | undefined {
+  const timestamps = accounts.flatMap((account) =>
+    [account.modelsUpdatedAt, account.lastCheckedAt].filter(
+      (value): value is string => Boolean(value)
+    )
+  );
+  timestamps.sort((a, b) => Date.parse(b) - Date.parse(a));
+  return timestamps[0];
+}
+
+function ModelRow({ model }: { model: DiscoveredModel }) {
+  return (
+    <article className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3.5 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 break-words">
+            {model.displayName || model.id}
+          </h3>
+          <p className="mt-0.5 text-[11px] font-mono text-slate-500 dark:text-slate-400 break-all">
+            {model.id}
+          </p>
+        </div>
+        <span className="shrink-0 rounded-md border border-emerald-200 dark:border-emerald-900 bg-emerald-50 dark:bg-emerald-950/40 px-2 py-1 text-[10px] font-semibold text-emerald-700 dark:text-emerald-300">
+          generateContent
+        </span>
+      </div>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+        <span>Input: {model.inputTokenLimit ? model.inputTokenLimit.toLocaleString() : '—'}</span>
+        <span>Output: {model.outputTokenLimit ? model.outputTokenLimit.toLocaleString() : '—'}</span>
+        {model.version ? <span>Version: {model.version}</span> : null}
+      </div>
+      <p className="mt-1.5 text-[10px] text-slate-400 dark:text-slate-500">
+        Listed by Gemini Models API; not a live generation test.
+      </p>
+    </article>
+  );
+}
+
 export const ModelsPage: React.FC<ModelsPageProps> = ({
   accounts,
   checkingKeyIds,
@@ -26,385 +92,343 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
 }) => {
   const [selectedAccountId, setSelectedAccountId] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
-  const [onlyGenerateContent, setOnlyGenerateContent] = useState(false);
-  const [showMatrix, setShowMatrix] = useState(true);
-  const [showExplorer, setShowExplorer] = useState(true);
+  const [showDiscoveryArchive, setShowDiscoveryArchive] = useState(false);
 
-  // Automatically bring refreshed model results into view when discovery data changes.
-  const resultsSectionRef = useRef<HTMLElement | null>(null);
-  const previousResultsVersionRef = useRef<string | null>(null);
-  const resultsVersion = accounts
-    .map((account) =>
-      [account.id, account.modelsUpdatedAt || '', account.discoveredModels.length].join(':')
-    )
-    .join('|');
+  const displayedAccounts = useMemo(
+    () =>
+      selectedAccountId === 'ALL'
+        ? accounts
+        : accounts.filter((account) => account.id === selectedAccountId),
+    [accounts, selectedAccountId]
+  );
 
-  useEffect(() => {
-    const previousVersion = previousResultsVersionRef.current;
-    previousResultsVersionRef.current = resultsVersion;
-
-    // Skip the initial render; scroll only after a later successful model refresh.
-    if (
-      previousVersion !== null &&
-      previousVersion !== resultsVersion &&
-      accounts.some((account) => account.discoveredModels.length > 0)
-    ) {
-      resultsSectionRef.current?.scrollIntoView({
-        behavior: 'smooth',
-        block: 'start',
-      });
-    }
-  }, [accounts, resultsVersion]);
-
-  const allDiscoveredModelIds = useMemo(() => {
-    const map = new Map<string, DiscoveredModel>();
-    for (const acc of accounts) {
-      for (const m of acc.discoveredModels) {
-        if (!map.has(m.id)) {
-          map.set(m.id, m);
+  const allDiscoveredModels = useMemo(() => {
+    const models = new Map<string, DiscoveredModel>();
+    for (const account of displayedAccounts) {
+      for (const model of account.discoveredModels) {
+        const existing = models.get(model.id);
+        if (!existing) {
+          models.set(model.id, {
+            ...model,
+            supportedGenerationMethods: [...new Set(model.supportedGenerationMethods)],
+          });
+          continue;
         }
+
+        // Union methods across keys so one incomplete record cannot hide support
+        // confirmed by another key or project.
+        models.set(model.id, {
+          ...existing,
+          supportedGenerationMethods: [
+            ...new Set([
+              ...existing.supportedGenerationMethods,
+              ...model.supportedGenerationMethods,
+            ]),
+          ],
+        });
       }
     }
-    return Array.from(map.values())
-      .filter((m) => {
-        if (
-          onlyGenerateContent &&
-          !m.supportedGenerationMethods.includes('generateContent')
-        ) {
-          return false;
-        }
-        if (searchQuery.trim()) {
-          const q = searchQuery.toLowerCase();
-          return (
-            m.id.toLowerCase().includes(q) ||
-            m.displayName.toLowerCase().includes(q)
-          );
-        }
-        return true;
-      })
-      .sort((a, b) => a.id.localeCompare(b.id));
-  }, [accounts, onlyGenerateContent, searchQuery]);
+    return Array.from(models.values()).sort((a, b) => a.id.localeCompare(b.id));
+  }, [displayedAccounts]);
 
-  const displayedAccounts = useMemo(() => {
-    if (selectedAccountId === 'ALL') return accounts;
-    return accounts.filter((a) => a.id === selectedAccountId);
-  }, [accounts, selectedAccountId]);
+  const generateContentModels = useMemo(
+    () => allDiscoveredModels.filter(isGenerateContentSupported),
+    [allDiscoveredModels]
+  );
+
+  const stableModels = useMemo(
+    () => generateContentModels.filter((model) => !isPreviewModel(model)),
+    [generateContentModels]
+  );
+  const previewModels = useMemo(
+    () => generateContentModels.filter(isPreviewModel),
+    [generateContentModels]
+  );
+  const hiddenModels = useMemo(
+    () => allDiscoveredModels.filter((model) => !isGenerateContentSupported(model)),
+    [allDiscoveredModels]
+  );
+
+  const filteredStableModels = stableModels.filter((model) =>
+    matchesSearch(model, searchQuery)
+  );
+  const filteredPreviewModels = previewModels.filter((model) =>
+    matchesSearch(model, searchQuery)
+  );
+
+  const isRefreshing = displayedAccounts.some((account) =>
+    checkingKeyIds.has(account.id)
+  );
+  const refreshableAccounts = displayedAccounts.filter(
+    (account) => account.enabled && !checkingKeyIds.has(account.id)
+  );
+  const lastChecked = latestTimestamp(displayedAccounts);
+  const hasRelevantErrors = displayedAccounts.some(
+    (account) => Boolean(account.modelDiscoveryError || account.latestError?.modelId)
+  );
+
+  const refreshModels = () => {
+    void Promise.all(
+      refreshableAccounts.map((account) => onRefreshKey(account.id))
+    ).catch(() => undefined);
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Filter Controls */}
-      <div className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 space-y-3">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="relative">
-            <Search
-              className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none"
-              aria-hidden="true"
-            />
-            <input
-              type="search"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search discovered models..."
-              aria-label="Search discovered models"
-              className="w-full min-h-[44px] pl-10 pr-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-sm text-slate-900 dark:text-slate-100"
-            />
-          </div>
-
-          <select
-            value={selectedAccountId}
-            onChange={(e) => setSelectedAccountId(e.target.value)}
-            aria-label="Filter by API key account"
-            className="w-full min-h-[44px] px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-sm text-slate-900 dark:text-slate-100"
-          >
-            <option value="ALL">All API Keys ({accounts.length})</option>
-            {accounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>
-                {acc.accountName} ({acc.discoveredModels.length} models)
-              </option>
-            ))}
-          </select>
-
-          <label className="min-h-[44px] px-3.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 flex items-center gap-2.5 text-sm text-slate-700 dark:text-slate-200 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={onlyGenerateContent}
-              onChange={(e) => setOnlyGenerateContent(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-600"
-            />
-            <span>Supports generateContent</span>
-          </label>
-        </div>
-      </div>
-
-      {/* Model Compatibility Matrix */}
-      <section className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-4">
+    <div className="mx-auto w-full max-w-[740px] space-y-4">
+      <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-3.5 sm:p-4 space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-              Model Compatibility Matrix
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              Models Supporting generateContent
             </h2>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              Real API-discovered model availability across your saved keys. Only models confirmed by the Models endpoint are marked Available.
+            <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+              Models whose discovery metadata lists generateContent
             </p>
           </div>
           <button
             type="button"
-            onClick={() => setShowMatrix((v) => !v)}
-            aria-expanded={showMatrix}
-            className="min-h-[44px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 inline-flex items-center gap-1.5 shrink-0"
+            onClick={refreshModels}
+            disabled={refreshableAccounts.length === 0 || isRefreshing}
+            className="min-h-[38px] shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-[#2563eb] px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-45"
           >
-            {showMatrix ? (
-              <>
-                Hide Table <ChevronUp className="w-4 h-4" />
-              </>
-            ) : (
-              <>
-                Show Table <ChevronDown className="w-4 h-4" />
-              </>
-            )}
+            <RefreshCw className={isRefreshing ? 'h-3.5 w-3.5 animate-spin' : 'h-3.5 w-3.5'} />
+            Refresh Models
           </button>
         </div>
 
-        {showMatrix && (
-          <>
-            {accounts.length === 0 || allDiscoveredModelIds.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-800 p-6 text-center text-sm text-slate-500 dark:text-slate-400">
-                No discovered models to compare yet. Add and check at least one valid API key.
-              </div>
-            ) : (
-              <div
-                className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800"
-                data-no-swipe="true"
-              >
-                <table className="w-full border-collapse text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950">
-                      <th className="sticky left-0 z-10 bg-slate-50 dark:bg-slate-950 px-3.5 py-3 font-semibold text-slate-700 dark:text-slate-200 min-w-[160px] border-r border-slate-200 dark:border-slate-800">
-                        Model ID
-                      </th>
-                      {displayedAccounts.map((acc) => (
-                        <th
-                          key={acc.id}
-                          className="px-3.5 py-3 font-semibold text-slate-700 dark:text-slate-200 min-w-[140px] whitespace-nowrap"
-                        >
-                          <div className="truncate max-w-[160px]">
-                            {acc.accountName}
-                          </div>
-                          <div className="text-[11px] font-normal text-slate-500 dark:text-slate-400">
-                            {acc.status}
-                          </div>
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                    {allDiscoveredModelIds.map((model) => (
-                      <tr
-                        key={model.id}
-                        className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
-                      >
-                        <td className="sticky left-0 z-10 bg-white dark:bg-slate-900 px-3.5 py-2.5 font-mono text-slate-800 dark:text-slate-200 border-r border-slate-200 dark:border-slate-800 whitespace-nowrap">
-                          {model.id}
-                        </td>
-                        {displayedAccounts.map((acc) => {
-                          const hasModel = acc.discoveredModels.some(
-                            (m) => m.id === model.id
-                          );
-                          const isReady = acc.status === KeyHealthStatus.Ready;
-                          return (
-                            <td key={acc.id} className="px-3.5 py-2.5 whitespace-nowrap">
-                              {hasModel ? (
-                                <span className="inline-flex items-center gap-1 font-medium text-emerald-700 dark:text-emerald-400">
-                                  <Check className="w-3.5 h-3.5" aria-hidden="true" />
-                                  Available
-                                </span>
-                              ) : isReady ? (
-                                <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400">
-                                  <Minus className="w-3.5 h-3.5" aria-hidden="true" />
-                                  Unavailable
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400">
-                                  <AlertCircle className="w-3.5 h-3.5" aria-hidden="true" />
-                                  {acc.status === KeyHealthStatus.NotChecked
-                                    ? 'Not Checked'
-                                    : 'Key Error'}
-                                </span>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </>
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2.5 py-2">
+            <p className="text-[10px] text-slate-500 dark:text-slate-400">Supported</p>
+            <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">
+              {generateContentModels.length}
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2.5 py-2">
+            <p className="text-[10px] text-slate-500 dark:text-slate-400">Preview</p>
+            <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">
+              {previewModels.length}
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2.5 py-2">
+            <p className="text-[10px] text-slate-500 dark:text-slate-400">Other saved</p>
+            <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">
+              {hiddenModels.length}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search model name or ID..."
+              aria-label="Search models"
+              className="min-h-[40px] w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 pl-9 pr-3 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
+            />
+          </div>
+          <select
+            value={selectedAccountId}
+            onChange={(event) => setSelectedAccountId(event.target.value)}
+            aria-label="Filter models by API key"
+            className="min-h-[40px] w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-3 text-sm text-slate-900 dark:text-slate-100 sm:w-[190px]"
+          >
+            <option value="ALL">All API Keys ({accounts.length})</option>
+            {accounts.map((account) => (
+              <option key={account.id} value={account.id}>
+                {account.accountName}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+          <span>
+            Last Checked: {lastChecked ? formatRelativeTime(lastChecked) : 'Never'}
+          </span>
+          <span>
+            {filteredStableModels.length + filteredPreviewModels.length} matching models
+          </span>
+        </div>
+      </section>
+
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2 px-0.5">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              Supported Models
+            </h2>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Stable models with generateContent support
+            </p>
+          </div>
+          <span className="rounded-md bg-slate-100 dark:bg-slate-800 px-2 py-1 text-[11px] font-semibold tabular-nums text-slate-600 dark:text-slate-300">
+            {filteredStableModels.length}
+          </span>
+        </div>
+        {filteredStableModels.length > 0 ? (
+          <div className="space-y-2">
+            {filteredStableModels.map((model) => (
+              <ModelRow key={model.id} model={model} />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-3 py-5 text-center text-xs text-slate-500 dark:text-slate-400">
+            {stableModels.length === 0
+              ? 'No stable generateContent models found yet.'
+              : 'No stable models match this search.'}
+          </div>
         )}
       </section>
 
-      {/* Per-Key Discovered Models Explorer */}
-      <section ref={resultsSectionRef} className="space-y-4 scroll-mt-20">
-        <div className="flex items-center justify-between">
-          <h2 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-            Per-Key Model Discovery Details
-          </h2>
-          <button
-            type="button"
-            onClick={() => setShowExplorer((v) => !v)}
-            aria-expanded={showExplorer}
-            className="min-h-[44px] px-3 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 inline-flex items-center gap-1.5"
-          >
-            {showExplorer ? (
-              <>
-                Hide Details <ChevronUp className="w-4 h-4" />
-              </>
-            ) : (
-              <>
-                Show Details <ChevronDown className="w-4 h-4" />
-              </>
-            )}
-          </button>
+      <section className="space-y-2">
+        <div className="flex items-center justify-between gap-2 px-0.5">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100">
+              Preview / Experimental
+            </h2>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Kept separate from the stable model list
+            </p>
+          </div>
+          <span className="rounded-md bg-amber-50 dark:bg-amber-950/40 px-2 py-1 text-[11px] font-semibold tabular-nums text-amber-700 dark:text-amber-300">
+            {filteredPreviewModels.length}
+          </span>
         </div>
+        {filteredPreviewModels.length > 0 ? (
+          <div className="space-y-2">
+            {filteredPreviewModels.map((model) => (
+              <ModelRow key={model.id} model={model} />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-300 dark:border-slate-700 px-3 py-4 text-center text-xs text-slate-500 dark:text-slate-400">
+            {previewModels.length === 0
+              ? 'No Preview / Experimental generateContent models found.'
+              : 'No Preview / Experimental models match this search.'}
+          </div>
+        )}
+      </section>
 
-        {showExplorer &&
-          displayedAccounts.map((acc) => {
-            const isChecking = checkingKeyIds.has(acc.id);
-            const filteredModels = acc.discoveredModels.filter((m) => {
-              if (
-                onlyGenerateContent &&
-                !m.supportedGenerationMethods.includes('generateContent')
-              ) {
-                return false;
-              }
-              if (searchQuery.trim()) {
-                const q = searchQuery.toLowerCase();
-                return (
-                  m.id.toLowerCase().includes(q) ||
-                  m.displayName.toLowerCase().includes(q)
-                );
-              }
-              return true;
-            });
-
+      {hasRelevantErrors ? (
+        <section className="rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/60 dark:bg-rose-950/20 p-3.5 space-y-2">
+          <div className="flex items-center gap-2 text-xs font-semibold text-rose-700 dark:text-rose-300">
+            <AlertCircle className="h-4 w-4" />
+            Relevant Model Errors
+          </div>
+          {displayedAccounts.map((account) => {
+            if (!account.modelDiscoveryError && !account.latestError?.modelId) {
+              return null;
+            }
             return (
-              <article
-                key={acc.id}
-                className="rounded-2xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 sm:p-5 space-y-4"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-3">
-                      <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                        {acc.accountName}
-                      </h3>
-                      <StatusBadge
-                        status={acc.status}
-                        enabled={acc.enabled}
-                        isChecking={isChecking}
-                      />
-                    </div>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 font-mono tabular-nums">
-                      {filteredModels.length} shown of {acc.discoveredModels.length} discovered
-                      {' · '}
-                      Updated {formatRelativeTime(acc.modelsUpdatedAt)}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={isChecking || !acc.enabled}
-                    onClick={() => void onRefreshKey(acc.id)}
-                    aria-label={`Refresh models for ${acc.accountName}`}
-                    className="min-h-[44px] px-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-50 inline-flex items-center gap-1.5"
-                  >
-                    <RefreshCw
-                      className={`w-3.5 h-3.5 ${isChecking ? 'animate-spin' : ''}`}
-                    />
-                    <span>Refresh Models</span>
-                  </button>
-                </div>
-
-                {acc.modelDiscoveryError && (
-                  <div className="rounded-xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/30 p-3 text-xs text-rose-700 dark:text-rose-300">
-                    Discovery error: {acc.modelDiscoveryError}
-                  </div>
-                )}
-
-                {filteredModels.length === 0 ? (
-                  <div className="py-4 text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
-                    <Cpu className="w-4 h-4 shrink-0" />
-                    <span>
-                      {acc.discoveredModels.length === 0
-                        ? 'No models returned by Models API for this key.'
-                        : 'No models match your current filter.'}
-                    </span>
-                  </div>
-                ) : (
-                  <div
-                    className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800"
-                    data-no-swipe="true"
-                  >
-                    <table className="w-full border-collapse text-left text-xs">
-                      <thead>
-                        <tr className="border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-300">
-                          <th className="px-3.5 py-2.5 font-semibold">Display Name</th>
-                          <th className="px-3.5 py-2.5 font-semibold">Model ID</th>
-                          <th className="px-3.5 py-2.5 font-semibold">Methods</th>
-                          <th className="px-3.5 py-2.5 font-semibold text-right">
-                            Input Limit
-                          </th>
-                          <th className="px-3.5 py-2.5 font-semibold text-right">
-                            Output Limit
-                          </th>
-                          <th className="px-3.5 py-2.5 font-semibold">Status</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {filteredModels.map((m) => (
-                          <tr
-                            key={m.id}
-                            className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40"
-                          >
-                            <td className="px-3.5 py-2.5 font-medium text-slate-900 dark:text-slate-100">
-                              <div>{m.displayName}</div>
-                              {m.version && (
-                                <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                                  v{m.version}
-                                </div>
-                              )}
-                            </td>
-                            <td className="px-3.5 py-2.5 font-mono text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                              {m.id}
-                            </td>
-                            <td className="px-3.5 py-2.5 font-mono text-slate-600 dark:text-slate-300">
-                              {m.supportedGenerationMethods.join(', ') || 'None listed'}
-                            </td>
-                            <td className="px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                              {m.inputTokenLimit
-                                ? m.inputTokenLimit.toLocaleString()
-                                : '—'}
-                            </td>
-                            <td className="px-3.5 py-2.5 font-mono tabular-nums text-right text-slate-700 dark:text-slate-300 whitespace-nowrap">
-                              {m.outputTokenLimit
-                                ? m.outputTokenLimit.toLocaleString()
-                                : '—'}
-                            </td>
-                            <td className="px-3.5 py-2.5 whitespace-nowrap">
-                              <span className="text-emerald-700 dark:text-emerald-400 font-medium">
-                                Listed by API
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </article>
+              <div key={account.id} className="rounded-lg bg-white/70 dark:bg-slate-950/50 p-2.5 text-[11px]">
+                <p className="font-semibold text-slate-800 dark:text-slate-200">
+                  {account.accountName}
+                </p>
+                {account.latestError?.modelId ? (
+                  <p className="mt-1 text-rose-700 dark:text-rose-300">
+                    {account.latestError.modelId}
+                    {account.latestError.httpStatus
+                      ? ' · HTTP ' + account.latestError.httpStatus
+                      : ''}
+                    {' · '}
+                    {account.latestError.message}
+                  </p>
+                ) : null}
+                {account.modelDiscoveryError ? (
+                  <p className="mt-1 text-rose-700 dark:text-rose-300">
+                    Discovery: {account.modelDiscoveryError}
+                  </p>
+                ) : null}
+              </div>
             );
           })}
+        </section>
+      ) : null}
+
+      <section className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 overflow-hidden">
+        <button
+          type="button"
+          onClick={() => setShowDiscoveryArchive((value) => !value)}
+          aria-expanded={showDiscoveryArchive}
+          className="flex min-h-[46px] w-full items-center justify-between gap-3 px-3.5 text-left"
+        >
+          <span className="min-w-0">
+            <span className="block text-xs font-semibold text-slate-800 dark:text-slate-200">
+              All Discovered Models
+            </span>
+            <span className="mt-0.5 block text-[10px] text-slate-500 dark:text-slate-400">
+              Includes all discovered models; discovery data is retained
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+            {allDiscoveredModels.length}
+            {showDiscoveryArchive ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </span>
+        </button>
+
+        {showDiscoveryArchive ? (
+          <div className="border-t border-slate-200 dark:border-slate-800 p-3.5 space-y-3">
+            {displayedAccounts.map((account) => {
+              const accountModels = account.discoveredModels.filter((model) =>
+                matchesSearch(model, searchQuery)
+              );
+              return (
+                <div key={account.id} className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <h3 className="truncate text-xs font-semibold text-slate-800 dark:text-slate-200">
+                        {account.accountName}
+                      </h3>
+                      <StatusBadge
+                        status={account.status}
+                        enabled={account.enabled}
+                        isChecking={checkingKeyIds.has(account.id)}
+                      />
+                    </div>
+                    <span className="shrink-0 text-[10px] text-slate-500 dark:text-slate-400">
+                      {accountModels.length} / {account.discoveredModels.length}
+                    </span>
+                  </div>
+                  {accountModels.length > 0 ? (
+                    <div className="divide-y divide-slate-100 dark:divide-slate-800 rounded-lg border border-slate-200 dark:border-slate-800">
+                      {accountModels.map((model) => {
+                        const hasGenerateContent =
+                          model.supportedGenerationMethods.includes('generateContent');
+                        return (
+                          <div key={model.id} className="px-2.5 py-2">
+                            <p className="break-all text-[11px] font-medium text-slate-800 dark:text-slate-200">
+                              {model.displayName} <span className="font-mono text-slate-500">({model.id})</span>
+                            </p>
+                            <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-slate-500 dark:text-slate-400">
+                              <span>{hasGenerateContent ? 'generateContent supported' : 'generateContent not listed'}</span>
+                              <span>{model.supportedGenerationMethods.join(', ') || 'No methods listed'}</span>
+                              {isPreviewModel(model) ? <span>Preview / Experimental</span> : null}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="rounded-lg bg-slate-50 dark:bg-slate-950 px-3 py-3 text-center text-[11px] text-slate-500 dark:text-slate-400">
+                      No discovered models match this search for this key.
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-500 dark:text-slate-400">
+              <Cpu className="h-3.5 w-3.5" />
+              Hidden models remain stored and are not deleted by these filters.
+            </div>
+          </div>
+        ) : null}
       </section>
     </div>
   );

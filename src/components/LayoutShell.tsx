@@ -202,7 +202,7 @@ export const LayoutShell: React.FC<LayoutShellProps> = ({
 
         {/* Scrollable Page Viewport with Touch Swipe Navigation */}
         <main
-          className="flex-1 p-4 sm:p-6 pb-24 lg:pb-8 max-w-7xl w-full mx-auto"
+          className="flex-1 w-full max-w-[420px] sm:max-w-3xl lg:max-w-7xl mx-auto px-3.5 sm:px-6 pt-4 pb-24 lg:pb-8"
           onTouchStart={swipeHandlers.onTouchStart}
           onTouchEnd={swipeHandlers.onTouchEnd}
         >
