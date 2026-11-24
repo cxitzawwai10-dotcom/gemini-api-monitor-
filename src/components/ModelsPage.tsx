@@ -200,7 +200,7 @@ export const ModelsPage: React.FC<ModelsPageProps> = ({
           <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2.5 py-2">
             <p className="text-[10px] text-slate-500 dark:text-slate-400">Supported</p>
             <p className="mt-0.5 text-lg font-bold tabular-nums text-slate-900 dark:text-slate-100">
-              {stableModels.length}
+              {generateContentModels.length}
             </p>
           </div>
           <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 px-2.5 py-2">
